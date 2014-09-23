@@ -1,0 +1,100 @@
+use strict;
+use Config::Simple;
+use Data::Dumper;
+use IPC::Run 'run';
+
+@ARGV == 4 or die "Usage: $0 default-tag deploy.cfg services modules-file\n";
+
+my $default_tag = shift;
+my $config_file = shift;
+my $services = shift;
+my $modules = shift;
+
+open(M, ">", $modules) or die "cannot write $modules: $!";
+
+my %cfg;
+
+Config::Simple->import_from($config_file, \%cfg);
+
+my $m_client = $cfg{'default.deploy-client'};
+my $m_service = $cfg{'default.deploy-service'};
+my $m_master = $cfg{'default.deploy-master'};
+
+$m_client = [$m_client] unless ref($m_client);
+$m_service = [$m_service] unless ref($m_service);
+$m_master = [$m_master] unless ref($m_master);
+
+my %mods = map { $_ => 1 } grep { $_ } @$m_client, @$m_service, @$m_master;
+my @mods = sort keys %mods;
+
+open(S, "<", $services) or die "Cannot open $services: $!";
+
+my %tag;
+while (<S>)
+{
+    chomp;
+    my($host, $x, $mod, $port, $proxy, $name, $path, $dir, $tag) = split(/:/);
+    $tag{$mod} = $tag;
+}
+close(S);
+
+my $ok = run ["git", "clone", "kbase\@git.kbase.us:dev_container"];
+$ok or die "Cannot clone dev_container\n";
+chdir("dev_container/modules") or die "cannot chdir dev_container/modules";
+
+push(@mods, "dev_container_tools");
+
+my @mods_to_checkout = @mods;
+while (@mods_to_checkout)
+{
+    my $mod = shift(@mods_to_checkout);
+    print "Process $mod\n";
+    if (-d $mod)
+    {
+	warn "Module $mod already in place\n";
+	next;
+    }
+    my $ok = run(["git", "clone", "kbase\@git.kbase.us:$mod"],
+		 '>', "out.$mod", "2>", "err.$mod");
+    $ok or die "clone of $mod failed";
+    chdir($mod) or die "cannot chdir $mod: $!";
+    my $tag = $tag{$mod} // 'head';
+    my @git_info = `git tag -l 2>&1 | sort -n`;
+    chomp @git_info;
+    if ($tag eq 'latest')
+    {
+	$tag = $git_info[-1];
+    }
+    elsif ($tag ne 'head' && grep { $_ eq $default_tag } @git_info)
+    {
+	$tag = $default_tag;
+    }
+    
+    if (defined($tag) && $tag ne 'head')
+    {
+	$ok = run(["git", "checkout", $tag], ">>", "out.$mod", "2>>err.$mod");
+	$ok or die "Checkout to $tag failed\n";
+	print M "$mod\t$tag\n";
+    }
+    else
+    {
+	print M "$mod\tHEAD\n";
+    }
+    if (open(D, "<", "DEPENDENCIES"))
+    {
+	while (my $dep = <D>)
+	{
+	    chomp $dep;
+	    next if -d "../$dep";
+	    next if grep { $_ eq $dep } @mods_to_checkout;
+	    print "Add $dep to module list as a dependency of $mod\n";
+	    push(@mods_to_checkout, $dep);
+	}
+	close(D);
+    }
+		
+    
+    chdir("..");
+
+}
+

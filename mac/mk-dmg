@@ -1,0 +1,18 @@
+#!/bin/sh
+
+basedir=`dirname $0`;
+basedir=`cd $basedir; pwd`
+
+reldir=`cd ..; pwd`
+
+base=`cat $basedir/version-base`
+here=`pwd`
+
+versnum=`echo $here | perl -ne '/Rel(\d+)/ and print "$1\n"'`
+
+version="$base-dmg-$versnum"
+
+echo version=$version
+echo basedir=$basedir
+
+kb_build_mac_dmg $reldir/output $reldir/$version.uncomp.dmg $reldir/$version.dmg
