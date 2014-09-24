@@ -49,8 +49,15 @@ if [ ! -h $top_dir/runtime ] ; then
     ln -s $rt_dir $top_dir/runtime
 fi
 
+#
+# Is this a mac?
+#
+if [ -d /Libarary ] ; then
+   mac=":\$KB_TOP/mac/bin"
+fi
+
 perl_lib="\$KB_TOP/lib"
-path_str="\$KB_TOP/bin:\$KB_RUNTIME/bin"
+path_str="\$KB_TOP/bin:${mac}\$KB_RUNTIME/bin"
 
 cat > $top_dir/user-env.sh <<EOF
 export KB_TOP="$top_dir"
