@@ -1,0 +1,96 @@
+#!/usr/bin/env perl
+
+use FindBin;
+
+use lib "$FindBin::Bin";
+
+use strict;
+use Config::Simple;
+use Data::Dumper;
+use IPC::Run 'run';
+use GithubRepo;
+
+#
+# Create a distribution manifest for the release in the current directory.
+#
+# Read the distro.cfg file here and parse out the deploy-client, deploy-service,
+# and deploy-master lines.
+#
+
+@ARGV == 0 or die "Usage: $0\n";
+
+my %cfg;
+
+my $config_file = "distro.cfg";
+-f $config_file or die "Config file $config_file not found\n";
+
+Config::Simple->import_from($config_file, \%cfg);
+
+my $m_client = $cfg{'default.deploy-client'};
+my $m_service = $cfg{'default.deploy-service'};
+my $m_master = $cfg{'default.deploy-master'};
+
+$m_client = [$m_client] unless ref($m_client);
+$m_service = [$m_service] unless ref($m_service);
+$m_master = [$m_master] unless ref($m_master);
+
+my %mods = map { $_ => 1 } grep { $_ } @$m_client, @$m_service, @$m_master;
+my @mods = sort keys %mods;
+
+push(@mods, "dev_container");
+
+my %repos;
+my %hash;
+my %info;
+
+my @mods_to_checkout = @mods;
+
+my $token =  "7f307823ffb52d368fe218eb7f6ab9061b855b03";
+
+
+while (@mods_to_checkout)
+{
+    my $mod = shift(@mods_to_checkout);
+
+    my $repo = GithubRepo->new("kbase/$mod", $token);
+    $repos{$mod} = $repo;
+    print STDERR "Process $mod\n";
+
+    my $info = $repo->get_info();
+    my $hash = $repo->get_master_hash();
+    $hash{$mod} = $hash;
+    $info{$mod} = $info;
+
+    my @deps = $repo->get_dependencies($hash);
+
+    print STDERR "$mod => @deps\n" if @deps;
+
+    for my $dep (@deps)
+    {
+	if (!$hash{$dep} && !grep { $_ eq $dep } @mods_to_checkout)
+	{
+	    push(@mods_to_checkout, $dep);
+	    push(@mods, $dep);
+	}
+    }
+}
+
+open(M, ">", "Manifest") or die "Cannot write Manifest: $!";
+for my $mod (@mods)
+{
+    print M "$mod\t$hash{$mod}\n";
+}
+close(M);
+
+open(M, ">", "Contents") or die "Cannot write Contents: $!";
+for my $mod (@mods)
+{
+    print M "$mod\n";
+    my $info = $info{$mod};
+    my $in = $info->{description};
+    my $out;
+    run ['fmt'], '<', \$in, '>', \$out;
+    print M "$out\n";
+    print M "\n";
+
+}
