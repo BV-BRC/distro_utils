@@ -1,0 +1,28 @@
+#!/bin/sh
+
+basedir=`dirname $0`;
+basedir=`cd $basedir; pwd`
+
+reldir=`cd ..; pwd`
+
+base=`cat $basedir/version-base`
+here=`pwd`
+
+versnum=`echo $here | perl -ne '/Rel(\d+)/ and print "$1\n"'`
+
+version="$base-dmg-$versnum"
+
+if [ ! -f dmg.cfg ] ; then
+    echo "Missing dmg.cfg"
+    exit 1
+fi
+
+echo version=$version
+echo basedir=$basedir
+
+mkdir $reldir/output
+
+kb_build_mac_app --version $version \
+		 --autodeploy dmg.cfg  \
+		 $reldir/output/KBase.app
+

@@ -1,0 +1,77 @@
+#!/bin/sh
+
+#
+# Installation bootstrap script.
+#
+# Arguments:
+#
+#    runtime-dir
+
+fail () {
+    echo $1 1>&2
+    exit 1
+}
+
+if [ $# -lt 1 ] ; then
+    fail "Usage: $0 runtime-dir"
+else
+    rt_dir=$1
+fi
+
+if [ "$top_dir" = "" ] ; then
+    top_dir=`pwd`
+fi
+
+if [ ! -d $rt_dir ] ; then
+    fail "Runtime directory $rt_dir does not exist"
+fi
+
+if [ ! -x $rt_dir/bin/perl ] ; then
+    fail "Runtime directory $rt_dir does not contain an executable perl"
+fi
+
+if [ -d $top_dir/runtime ] ; then
+    t=`readlink $top_dir/runtime`
+    if [ "$t" != "$rt_dir" ] ; then
+	fail "Runtime already configured; remove $top_dir/runtime if you wish to re-bootstrap."
+    fi
+fi
+
+#if [ ! -x $rt_dir/java/bin/javac ] ; then
+#    fail "Runtime directory $rt_dir does not contain an executable javac"
+#fi
+
+#if [ ! -x $rt_dir/glassfish3/bin/asadmin ] ; then
+#    fail "Runtime directory $rt_dir does not contain an executable asadmin"
+#fi
+
+if [ ! -h $top_dir/runtime ] ; then
+    ln -s $rt_dir $top_dir/runtime
+fi
+
+#
+# Is this a mac?
+#
+if [ -d /Library ] ; then
+   mac=":\$KB_TOP/mac/bin"
+fi
+
+perl_lib="\$KB_TOP/lib"
+path_str="\$KB_TOP/bin${mac}:\$KB_RUNTIME/bin:\$PATH"
+
+cat > $top_dir/user-env.sh <<EOF
+export KB_TOP="$top_dir"
+export KB_RUNTIME="$rt_dir"
+export PATH="$path_str"
+export PERL5LIB="$perl_lib"
+hash -r
+EOF
+
+cat > $top_dir/user-env.csh <<EOF
+setenv KB_TOP "$top_dir"
+setenv KB_RUNTIME "$rt_dir"
+setenv PATH "$path_str"
+setenv PERL5LIB "$perl_lib"
+rehash
+EOF
+

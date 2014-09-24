@@ -1,0 +1,58 @@
+#!/usr/bin/env perl
+
+use strict;
+use Cwd 'abs_path';
+
+#
+# Read the manifest file and create a dev_container in the given destination. 
+# Create a deploy.cfg there based on the given target, the runtime configured here,
+# and the localization.cfg.
+#
+
+@ARGV == 1 or die "Usage: $0 dest-dir\n";
+
+my $git_base = "https://github.com/kbase";
+
+my $dest = shift;
+
+-d $dest || mkdir($dest) || die "cannot mkdir $dest: $!";
+
+$dest = abs_path($dest);
+
+open(M, "<", "Manifest") or die "cannot open Manifest: $!";
+
+my %hash;
+while (<M>)
+{
+    chomp;
+    my($mod, $hash) = split(/\t/);
+    $hash{$mod} = $hash;
+}
+
+close(M);
+
+chdir($dest) or die "Cannot chdir $dest: $!";
+
+my $h = $hash{dev_container};
+$h or die "No hash defined for dev_container\n";
+
+checkout("dev_container", $h);
+chdir("dev_container/modules") or die "Cannot chdir dev_container/modules: $!";
+
+while (my($mod, $hash) = each %hash)
+{
+    next if $mod eq 'dev_container';
+    checkout($mod, $hash);
+}
+
+sub checkout
+{
+    my($mod, $hash) = @_;
+
+    my $rc = system("git", "clone", "$git_base/$mod");
+    $rc == 0 or die "Clone $mod failed with rc=$rc\n";
+
+    $rc = system("cd $mod; git checkout $hash");
+    $rc == 0 or die "Checkout $hash of $mod failed with rc=$rc\n";
+}
+
