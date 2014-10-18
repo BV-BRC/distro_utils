@@ -1,10 +1,11 @@
 on run argv
 	set volName to item 1 of argv
+	set appName to item 2 of argv
 	
-	process_disk_image(volName)
+	process_disk_image(volName, appName)
 end run
 
-on process_disk_image(volumeName)
+on process_disk_image(volumeName, appName)
 	tell application "Finder"
 		tell disk (volumeName as string)
 			open
@@ -28,9 +29,9 @@ on process_disk_image(volumeName)
 			end tell
 			set background picture of opts to file ".background:background.png"
 			position of item "Applications" of container window
-			position of item "KBase.app" of container window
+			position of item appName of container window
 			set position of item "Applications" to {450, 102}
-			set position of item "KBase.app" to {168, 102}
+			set position of item appName to {168, 102}
 			
 			close
 			open

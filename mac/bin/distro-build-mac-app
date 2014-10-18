@@ -1,0 +1,262 @@
+#!/usr/bin/env perl
+
+#
+# Build a mac app wrapper of the current dev container.
+#
+# The argument is the directory containing the dev_container.
+# We assume the dev_container contains a deploy.cfg created
+# by checkout-from-manifest.
+#
+
+use File::Temp;
+use File::Slurp;
+use Data::Dumper;
+use strict;
+use Cwd 'abs_path';
+use File::Copy;
+
+use Getopt::Long::Descriptive;
+
+my $libpath = "$ENV{KB_TOP}/mac/lib";
+-d $libpath or die "Cannot find mac libpath $libpath\n";
+
+my $default_icon = "$libpath/KBASE_Icon_03.icns";
+my $default_banner = "Welcome to the KBase interactive shell. Please visit http://kbase.us/developer-zone/ for documentation.";
+my $default_app_name = "KBase";
+
+my($opt, $usage) = describe_options("%c %o build-dir\n",
+				    ["app-name=s", "application name", { default => $default_app_name }],
+				    ["version=s", "version string for this release"],
+				    ["icon=s", "icon to use for the dmg", { default => $default_icon }],
+				    ["banner=s", "banner to show upon starting terminal", { default => $default_banner }],
+				    ["help|h", "print this usage message"]);
+
+print($usage->text), exit if $opt->help;
+print($usage->text), exit 1 if (@ARGV != 1);
+
+my $build_dir = shift;
+my $app_dir = "$build_dir/app";
+-d $app_dir || mkdir $app_dir || die "cannot mkdir $app_dir: $!";
+
+my $app_name = $opt->app_name;
+my $target = "$app_dir/$app_name.app";
+my $dev_container = "$build_dir/dev_container";
+my $autodeploy_config = "$dev_container/deploy.cfg";
+
+my $icon = abs_path($opt->icon);
+-f $icon or die "Icon $icon out found\n";
+
+$autodeploy_config = abs_path($autodeploy_config);
+-f $autodeploy_config or die "Autodeploy config file $autodeploy_config not found\n";
+
+$dev_container = abs_path($dev_container);
+-d $dev_container or die "Dev container $dev_container not found\n";
+
+my $version = $opt->version;
+
+if (-d $target)
+{
+    warn "Target directory $target already exists\n";
+}
+
+$target = abs_path($target);
+
+my $runtime = $ENV{KB_RUNTIME};
+if (!$runtime)
+{
+    die "Could not find KB_RUNTIME environment variable";
+}
+
+#
+# Construct the script that will create the app wrapper.
+#
+
+my $tmp = File::Temp->new;
+
+write_applescript($tmp, $target);
+close($tmp);
+
+#
+# And run.
+#
+system("cat", $tmp->filename);
+my $rc = system("osascript", $tmp->filename);
+if ($rc != 0)
+{
+    print read_file($tmp->filename);
+    die "Error running applescript\n";
+}
+
+#
+# Edit the property list to set our icon and other information.
+#
+
+my $plist_file = "$target/Contents/Info.plist";
+my $plist_file_base = $plist_file;
+$plist_file_base =~ s/\.plist$//;
+
+copy($icon, "$target/Contents/Resources/kbase-icon.icns") or die "Cannot copy $icon to $target/Contents/Resources/kbase-icon.icns: $!";
+
+system("defaults", "write", $plist_file_base, "CFBundleIconFile", "kbase-icon");
+system("defaults", "write", $plist_file_base, "CFBundleShortVersionString", $version);
+
+#
+# Now we have the framework we can replicate our runtime into it.
+#
+
+print STDERR "copy runtime\n";
+$rc = system("rsync", "-ar", "$runtime/.", "$target/runtime");
+if ($rc != 0) {
+    die "Error syncing $runtime to $target/runtime\n";
+}
+
+#
+# We may now deploy into the application.
+#
+my @cmd;
+
+my @cmd = ("perl", "auto-deploy",
+	    "--target", "$target/deployment",
+	    '--override', "WRAP_PERL_TOOL=wrap_perl_app",
+	    '--override', "WRAP_PYTHON_TOOL=wrap_python_app",
+	    abs_path($autodeploy_config));
+
+my $cmd = "cd $dev_container; ./bootstrap $target/runtime";
+print STDERR "Bootstrap with $cmd\n";
+my $rc = system($cmd);
+if ($rc != 0) {
+    die "Error bootstrapping";
+}
+my $cmd = "cd $dev_container; . user-env.sh; make";
+print STDERR "Build with $cmd\n";
+my $rc = system($cmd);
+if ($rc != 0) {
+    die "Error building";
+}
+my $cmd = "cd $dev_container; . user-env.sh; @cmd";
+print STDERR "deploy with $cmd\n";
+my $rc = system($cmd);
+if ($rc != 0) {
+    die "Error deploying";
+}
+
+#
+# And write our user-init script.
+#
+
+write_user_bash_init("$target/user-env.sh", $opt->banner);
+write_user_csh_init("$target/user-env.csh", $opt->banner);
+write_user_zsh_init("$target/user-env.zsh", $opt->banner);
+
+sub write_user_bash_init
+{
+    my($file, $banner) = @_;
+    open(F, ">", $file) or die "Cannot write $file: $!";
+    print F <<'EOF';
+#!/bin/sh
+
+_dir=`dirname "$BASH_ARGV[0]"`
+
+export KB_TOP="$_dir/deployment"
+export KB_RUNTIME="$_dir/runtime"
+export KB_PERL_PATH="$_dir/deployment/lib"
+export PATH=$KB_RUNTIME/bin:$KB_TOP/bin:$PATH
+export PERL5LIB=$KB_PERL_PATH
+
+echo ""
+echo "$banner"
+echo ""
+EOF
+    close(F);
+    chmod(0755, $file);
+}
+
+sub write_user_zsh_init
+{
+    my($file, $banner) = @_;
+    open(F, ">", $file) or die "Cannot write $file: $!";
+    print F <<'EOF';
+#!/bin/sh
+
+_dir=`dirname "$0"`
+_dir=`cd "$_dir"; pwd`
+
+export KB_TOP="$_dir/deployment"
+export KB_RUNTIME="$_dir/runtime"
+export KB_PERL_PATH="$_dir/deployment/lib"
+export PATH=$KB_RUNTIME/bin:$KB_TOP/bin:$PATH
+export PERL5LIB=$KB_PERL_PATH
+
+echo ""
+echo "$banner"
+echo ""
+EOF
+    close(F);
+    chmod(0755, $file);
+}
+
+sub write_user_csh_init
+{
+    my($file, $banner) = @_;
+    open(F, ">", $file) or die "Cannot write $file: $!";
+    print F <<EOF;
+
+set kb_cmd=(\$_)
+set kb_path=`echo \$kb_cmd | perl -ne '/^\\s*source\\s+"?(.*)"?\$/ and print "\$1\\n"'`
+set kb_path=`dirname \$kb_path`
+set kb_path=`cd \$kb_path; pwd`
+
+setenv KB_TOP "\$kb_path/deployment"
+setenv KB_RUNTIME "\$kb_path/runtime"
+setenv KB_PERL_PATH "\$kb_path/deployment/lib"
+setenv PATH \$KB_RUNTIME/bin:\$KB_TOP/bin:\$PATH
+setenv PERL5LIB \$KB_PERL_PATH
+
+echo ""
+echo "$banner"
+echo ""
+EOF
+    close(F);
+    chmod(0755, $file);
+}
+
+sub write_applescript
+{
+    my($fh, $dir) = @_;
+
+    print $fh "script myScript\n";
+    print $fh application_applescript();
+    print $fh "end script\n";
+    print $fh "store script myScript in \"$dir\"\n";
+}
+
+
+
+
+
+sub application_applescript
+{
+    return <<'EOF';
+
+set here to path to me
+
+set base to POSIX path of here
+
+set shell_type to do shell script "/usr/bin/perl -e '$s = (getpwuid($>))[8]; print $s =~ /csh/ ? \"csh\\n\" : ($s =~ /zsh/ ? \"zsh\\n\" : \"bash\\n\")'"
+
+if shell_type = "csh"
+    set init to "source \"" & base & "/user-env.csh\""
+else if shell_type = "zsh"
+    set init to "source \"" & base & "/user-env.zsh\""
+else 
+    set init to "source \"" & base & "/user-env.sh\""
+end if
+    
+tell application "Terminal"
+     activate
+
+     do script with command init
+end tell
+
+EOF
+}

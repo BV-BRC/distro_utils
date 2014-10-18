@@ -20,6 +20,7 @@ use GithubRepo;
 @ARGV == 0 or die "Usage: $0\n";
 
 my %cfg;
+my %repo;
 
 my $config_file = "distro.cfg";
 -f $config_file or die "Config file $config_file not found\n";
@@ -52,7 +53,13 @@ while (@mods_to_checkout)
 {
     my $mod = shift(@mods_to_checkout);
 
-    my $repo = GithubRepo->new("kbase/$mod", $token);
+    my $repo_str = "kbase/$mod";
+    if ($cfg{"$mod.source-repo"})
+    {
+	$repo_str = $cfg{"$mod.source-repo"};
+    }
+    
+    my $repo = GithubRepo->new($repo_str, $token);
     $repos{$mod} = $repo;
     print STDERR "Process $mod\n";
 
@@ -78,7 +85,7 @@ while (@mods_to_checkout)
 open(M, ">", "Manifest") or die "Cannot write Manifest: $!";
 for my $mod (@mods)
 {
-    print M "$mod\t$hash{$mod}\n";
+    print M "$mod\t$hash{$mod}\t$repos{$mod}->{repo}\n";
 }
 close(M);
 

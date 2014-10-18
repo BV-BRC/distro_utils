@@ -1,0 +1,139 @@
+#!/usr/bin/env perl
+
+#
+# Given an built KBase.app provided on the command line, construct a
+# release dmg file.
+#
+# Create Applications symlink
+# Create uncompressed dmg
+# Use applescript helper to set up custom view settings on dmg
+# Create compressed dmg
+#
+
+#
+# For now we assume the one argument is build directory. We expect to find a directory
+# in the build directory called app that contains the .app wrapper for the distro.
+# We will put dmg files in the same directory using the basename of the app. The volume will also
+# be named by the basename of the app.
+#
+
+use strict;
+use Cwd 'abs_path';
+use File::Copy;
+use File::Basename;
+use Data::Dumper;
+
+@ARGV == 1 or die "Usage: $0 build-dir\n";
+
+my $libpath = "$ENV{KB_TOP}/mac/lib";
+-d $libpath or die "Cannot find mac libpath $libpath\n";
+
+my $build_dir = shift;
+
+-d $build_dir or die "Build dir $build_dir not found\n";
+
+$build_dir = abs_path($build_dir);
+
+my $target = "$build_dir/app";
+
+my @x = <$target/*.app>;
+if (@x == 0)
+{
+    die "No app found in $target";
+}
+elsif (@x > 1)
+{
+    die "Multiple apps found in $target";
+}
+my $app = $x[0];
+
+my($app_name, $app_path, $suffix) = fileparse($app, '.app');
+
+my $uncomp_dmg = "$build_dir/$app_name.uncomp.dmg";
+my $comp_dmg = "$build_dir/$app_name.dmg";
+
+my $volume_name = $app_name;
+
+if (-d "/Volumes/$volume_name")
+{
+    die "Volume $volume_name is already attached; please unmount before proceeding\n";
+}
+
+my $bg_image = "$libpath/mac-background.png";
+$bg_image = abs_path($bg_image);
+-f $bg_image or die "Cannot read $bg_image\n";
+
+#-f $uncomp_dmg and die "Uncompressed dmg $uncomp_dmg already exists\n";
+-f $comp_dmg and die "Compressed dmg $comp_dmg already exists\n";
+
+if (! -l "$target/Applications")
+{
+    symlink("/Applications", "$target/Applications") or die "Cannot symlink $target/Applications: $!";
+}
+
+
+#
+# Create initial uncompressed disk image.
+#
+
+my @cmd = ("hdiutil", "create", $uncomp_dmg, "-format", "UDRW",
+	   "-srcfolder", $target, "-volname", $volume_name);
+print "@cmd\n";
+system(@cmd);
+
+#
+# Mount the image.
+#
+
+my @mount = ("hdiutil", "attach", "-readwrite", $uncomp_dmg);
+sleep(10);
+
+my($dev, $volume);
+
+open(P, "-|", @mount) or die "Cannot run mount command: $!: @mount\n";
+while (<P>)
+{
+    if (m,^(/dev/disk\S+)\s+(\S+)\s+(\S+),)
+    {
+	$dev = $1;
+	$volume = $3;
+	print "Mounted at $volume from $dev\n";
+    }
+}
+if (!close(P))
+{
+    die "Volume attach failed: $! $?\n";
+}
+
+#
+# Copy data
+#
+
+mkdir("$volume/.background") or die "Cannot mkdir $volume/.background: $!";
+
+copy($bg_image, "$volume/.background/background.png");
+
+#
+# Invoke applescript to initialize the view.
+#
+
+@cmd = ("osascript", "$libpath/setup-image.applescript", $volume_name, "$app_name.app");
+my $rc = system(@cmd);
+if ($rc != 0)
+{
+    die "osascript failed rc=$rc: @cmd\n";
+}
+
+$rc = system("hdiutil", "detach", $volume);
+if ($rc != 0)
+{
+    die "Error detaching $volume: $!\n";
+}
+
+@cmd = ("hdiutil", "convert", $uncomp_dmg, "-format", "UDZO", "-imagekey", 9, "-o", $comp_dmg);
+$rc = system(@cmd);
+if ($rc != 0)
+{
+    die "Error $rc converting : @cmd\n";
+}
+

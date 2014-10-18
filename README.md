@@ -54,7 +54,7 @@ VERSION
 
 ==== 
 
-For each desired artificat (DMG, native-client, docker image, windows installer)
+For each desired artifact (DMG, native-client, docker image, windows installer)
     create artifact
     add to draft release
 
