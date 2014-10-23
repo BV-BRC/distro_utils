@@ -64,7 +64,12 @@ while (@mods_to_checkout)
     print STDERR "Process $mod\n";
 
     my $info = $repo->get_info();
-    my $hash = $repo->get_master_hash();
+    my $hash = $cfg{"$mod.source-commit-hash"};
+    
+    if (!$hash)
+    {
+	$hash = $repo->get_master_hash();
+    }
     $hash{$mod} = $hash;
     $info{$mod} = $info;
 

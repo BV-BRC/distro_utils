@@ -54,6 +54,16 @@ $dev_container = abs_path($dev_container);
 
 my $version = $opt->version;
 
+if (!$version)
+{
+    if (open(V, "<", "$build_dir/VERSION"))
+    {
+	$version = <V>;
+	chomp $version;
+	close(V);
+    }
+}
+
 if (-d $target)
 {
     warn "Target directory $target already exists\n";

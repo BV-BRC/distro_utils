@@ -23,6 +23,25 @@ my $dest = shift;
 $dest = abs_path($dest);
 my $here = abs_path('.');
 
+#
+# If this repo as a tag, use that as the version. Otherwise set 
+# a datestamp based on the date of the latest commit.
+#
+
+my $str = `git log -n 1 --pretty='tformat:%H %ai'`;
+my($hash, $date, $time, $tz) = split(/\s+/, $str);
+$time =~ s/:/-/g;
+my $tag = `git tag`;
+chomp $tag;
+print "Hash: $hash\n";
+print "Date: $date $time\n";
+print "Tag: $tag\n";
+my $version = $tag || "$date-$time";
+
+open(V, ">", "$dest/VERSION");
+print V "$version\n";
+close(V);
+
 open(M, "<", "Manifest") or die "cannot open Manifest: $!";
 
 my %hash;
