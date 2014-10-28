@@ -34,6 +34,13 @@ my $build_dir = shift;
 
 $build_dir = abs_path($build_dir);
 
+my $version;
+if (open(V, "<", "$build_dir/VERSION"))
+{
+    $version = <V>;
+    chomp $version;
+}
+
 my $target = "$build_dir/app";
 
 my @x = <$target/*.app>;
@@ -49,10 +56,13 @@ my $app = $x[0];
 
 my($app_name, $app_path, $suffix) = fileparse($app, '.app');
 
-my $uncomp_dmg = "$build_dir/$app_name.uncomp.dmg";
-my $comp_dmg = "$build_dir/$app_name.dmg";
+my $file_base = $app_name;
+$file_base .= "-$version" if $version;
 
-my $volume_name = $app_name;
+my $uncomp_dmg = "$build_dir/$file_base.uncomp.dmg";
+my $comp_dmg = "$build_dir/$file_base.dmg";
+
+my $volume_name = $file_base;
 
 if (-d "/Volumes/$volume_name")
 {

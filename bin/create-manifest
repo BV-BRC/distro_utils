@@ -46,8 +46,7 @@ my %info;
 
 my @mods_to_checkout = @mods;
 
-my $token =  "7f307823ffb52d368fe218eb7f6ab9061b855b03";
-
+my $token =  $ENV{GITHUB_TOKEN};
 
 while (@mods_to_checkout)
 {

@@ -21,14 +21,17 @@ my $libpath = "$ENV{KB_TOP}/mac/lib";
 -d $libpath or die "Cannot find mac libpath $libpath\n";
 
 my $default_icon = "$libpath/KBASE_Icon_03.icns";
-my $default_banner = "Welcome to the KBase interactive shell. Please visit http://kbase.us/developer-zone/ for documentation.";
+
+my $kbase_banner = "Welcome to the KBase interactive shell. Please visit http://kbase.us/developer-zone/ for documentation.";
+my $rasttk_banner = "Welcome to the RASTtk interactive shell. Please visit http://tutorial.theseed.org/ for documentation.";
+
 my $default_app_name = "KBase";
 
 my($opt, $usage) = describe_options("%c %o build-dir\n",
 				    ["app-name=s", "application name", { default => $default_app_name }],
 				    ["version=s", "version string for this release"],
 				    ["icon=s", "icon to use for the dmg", { default => $default_icon }],
-				    ["banner=s", "banner to show upon starting terminal", { default => $default_banner }],
+				    ["banner=s", "banner to show upon starting terminal"],
 				    ["help|h", "print this usage message"]);
 
 print($usage->text), exit if $opt->help;
@@ -42,6 +45,16 @@ my $app_name = $opt->app_name;
 my $target = "$app_dir/$app_name.app";
 my $dev_container = "$build_dir/dev_container";
 my $autodeploy_config = "$dev_container/deploy.cfg";
+
+my $banner = $opt->banner;
+if (!$banner && $app_name eq 'KBase')
+{
+    $banner = $kbase_banner;
+}
+elsif (!$banner && $app_name eq 'RASTtk')
+{
+    $banner = $rasttk_banner;
+}
 
 my $icon = abs_path($opt->icon);
 -f $icon or die "Icon $icon out found\n";
@@ -154,9 +167,9 @@ if ($rc != 0) {
 # And write our user-init script.
 #
 
-write_user_bash_init("$target/user-env.sh", $opt->banner);
-write_user_csh_init("$target/user-env.csh", $opt->banner);
-write_user_zsh_init("$target/user-env.zsh", $opt->banner);
+write_user_bash_init("$target/user-env.sh", $banner);
+write_user_csh_init("$target/user-env.csh", $banner);
+write_user_zsh_init("$target/user-env.zsh", $banner);
 
 sub write_user_bash_init
 {
@@ -173,10 +186,10 @@ export KB_PERL_PATH="$_dir/deployment/lib"
 export PATH=$KB_RUNTIME/bin:$KB_TOP/bin:$PATH
 export PERL5LIB=$KB_PERL_PATH
 
-echo ""
-echo "$banner"
-echo ""
+cat <<EBANNER
 EOF
+    print F "\n$banner\n\nEBANNER\n";
+
     close(F);
     chmod(0755, $file);
 }
@@ -197,10 +210,9 @@ export KB_PERL_PATH="$_dir/deployment/lib"
 export PATH=$KB_RUNTIME/bin:$KB_TOP/bin:$PATH
 export PERL5LIB=$KB_PERL_PATH
 
-echo ""
-echo "$banner"
-echo ""
+cat <<EBANNER
 EOF
+    print F "\n$banner\n\nEBANNER\n";
     close(F);
     chmod(0755, $file);
 }
@@ -222,10 +234,10 @@ setenv KB_PERL_PATH "\$kb_path/deployment/lib"
 setenv PATH \$KB_RUNTIME/bin:\$KB_TOP/bin:\$PATH
 setenv PERL5LIB \$KB_PERL_PATH
 
-echo ""
-echo "$banner"
-echo ""
+cat <<EBANNER
 EOF
+
+    print F "\n$banner\n\nEBANNER\n";
     close(F);
     chmod(0755, $file);
 }

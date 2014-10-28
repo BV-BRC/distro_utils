@@ -31,7 +31,7 @@ my $here = abs_path('.');
 my $str = `git log -n 1 --pretty='tformat:%H %ai'`;
 my($hash, $date, $time, $tz) = split(/\s+/, $str);
 $time =~ s/:/-/g;
-my $tag = `git tag`;
+my $tag = `git describe --tags`;
 chomp $tag;
 print "Hash: $hash\n";
 print "Date: $date $time\n";
