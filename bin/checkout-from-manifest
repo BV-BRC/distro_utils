@@ -2,8 +2,11 @@
 
 use strict;
 use Cwd 'abs_path';
+use Template;
 
 #
+# For now we assume this is run from the distribution directory.
+# 
 # Read the manifest file and create a dev_container in the given destination. 
 # Create a deploy.cfg there based on the given target, the runtime configured here,
 # and the localization.cfg.
@@ -11,22 +14,44 @@ use Cwd 'abs_path';
 
 @ARGV == 1 or die "Usage: $0 dest-dir\n";
 
-my $git_base = "https://github.com/kbase";
+my $git_base = "https://github.com";
 
 my $dest = shift;
 
 -d $dest || mkdir($dest) || die "cannot mkdir $dest: $!";
 
 $dest = abs_path($dest);
+my $here = abs_path('.');
+
+#
+# If this repo as a tag, use that as the version. Otherwise set 
+# a datestamp based on the date of the latest commit.
+#
+
+my $str = `git log -n 1 --pretty='tformat:%H %ai'`;
+my($hash, $date, $time, $tz) = split(/\s+/, $str);
+$time =~ s/:/-/g;
+my $tag = `git describe --tags`;
+chomp $tag;
+print "Hash: $hash\n";
+print "Date: $date $time\n";
+print "Tag: $tag\n";
+my $version = $tag || "$date-$time";
+
+open(V, ">", "$dest/VERSION");
+print V "$version\n";
+close(V);
 
 open(M, "<", "Manifest") or die "cannot open Manifest: $!";
 
 my %hash;
+my %repo;
 while (<M>)
 {
     chomp;
-    my($mod, $hash) = split(/\t/);
+    my($mod, $hash, $repo) = split(/\t/);
     $hash{$mod} = $hash;
+    $repo{$mod} = $repo;
 }
 
 close(M);
@@ -36,20 +61,40 @@ chdir($dest) or die "Cannot chdir $dest: $!";
 my $h = $hash{dev_container};
 $h or die "No hash defined for dev_container\n";
 
-checkout("dev_container", $h);
+checkout("dev_container", $h, $repo{dev_container});
 chdir("dev_container/modules") or die "Cannot chdir dev_container/modules: $!";
 
 while (my($mod, $hash) = each %hash)
 {
     next if $mod eq 'dev_container';
-    checkout($mod, $hash);
+    checkout($mod, $hash, $repo{$mod});
 }
+
+#
+# Read configs and create deploy.cfg using template toolkit.
+#
+
+my %vars = (
+    target => $dest,
+    runtime => $ENV{KB_RUNTIME},
+    );
+open(F, "<", "$here/localize.cfg") or die "Cannot open localize.cfg: $!";
+while (<F>)
+{
+    chomp;
+    my($key, $value) = /^(\S+)\s+(.*)$/;
+    $vars{$key} = $value;
+}
+close(F);
+
+my $tmpl = Template->new({ ABSOLUTE => 1 });
+$tmpl->process("$here/distro.cfg", \%vars, "$dest/dev_container/deploy.cfg");
 
 sub checkout
 {
-    my($mod, $hash) = @_;
+    my($mod, $hash, $repo) = @_;
 
-    my $rc = system("git", "clone", "$git_base/$mod");
+    my $rc = system("git", "clone", "$git_base/$repo", $mod);
     $rc == 0 or die "Clone $mod failed with rc=$rc\n";
 
     $rc = system("cd $mod; git checkout $hash");
