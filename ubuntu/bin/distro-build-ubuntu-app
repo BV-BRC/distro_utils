@@ -1,0 +1,206 @@
+#!/usr/bin/env perl
+
+#
+# Build a ubuntu wrapper of the current dev container.
+#
+# The argument is the directory containing the dev_container.
+# We assume the dev_container contains a deploy.cfg created
+# by checkout-from-manifest.
+#
+
+use File::Temp;
+use File::Slurp;
+use Data::Dumper;
+use strict;
+use Cwd 'abs_path';
+use File::Copy;
+
+use Getopt::Long::Descriptive;
+
+my $libpath = "$ENV{KB_TOP}/ubuntu/lib";
+-d $libpath or die "Cannot find ubuntu libpath $libpath\n";
+
+my $kbase_banner = "Welcome to the KBase interactive shell. Please visit http://kbase.us/developer-zone/ for documentation.";
+my $rasttk_banner = "Welcome to the RASTtk interactive shell. Please visit http://tutorial.theseed.org/ for documentation.";
+
+my $default_app_name = "KBase";
+
+my($opt, $usage) = describe_options("%c %o build-dir\n",
+				    ["app-name=s", "application name", { default => $default_app_name }],
+				    ["version=s", "version string for this release"],
+				    ["banner=s", "banner to show upon starting terminal"],
+				    ["help|h", "print this usage message"]);
+
+print($usage->text), exit if $opt->help;
+print($usage->text), exit 1 if (@ARGV != 1);
+
+my $build_dir = shift;
+my $app_dir = "$build_dir/app";
+-d $app_dir || mkdir $app_dir || die "cannot mkdir $app_dir: $!";
+
+my $app_name = $opt->app_name;
+my $target = "$app_dir/$app_name";
+my $dev_container = "$build_dir/dev_container";
+my $autodeploy_config = "$dev_container/deploy.cfg";
+
+-d $target || mkdir $target || die "cannot mkdir $target: $!";
+
+my $banner = $opt->banner;
+if (!$banner && $app_name eq 'KBase')
+{
+    $banner = $kbase_banner;
+}
+elsif (!$banner && $app_name eq 'RASTtk')
+{
+    $banner = $rasttk_banner;
+}
+
+$autodeploy_config = abs_path($autodeploy_config);
+-f $autodeploy_config or die "Autodeploy config file $autodeploy_config not found\n";
+
+$dev_container = abs_path($dev_container);
+-d $dev_container or die "Dev container $dev_container not found\n";
+
+my $version = $opt->version;
+
+if (!$version)
+{
+    if (open(V, "<", "$build_dir/VERSION"))
+    {
+	$version = <V>;
+	chomp $version;
+	close(V);
+    }
+}
+
+if (-d $target)
+{
+    warn "Target directory $target already exists\n";
+}
+
+$target = abs_path($target);
+
+my $runtime = $ENV{KB_RUNTIME};
+if (!$runtime)
+{
+    die "Could not find KB_RUNTIME environment variable";
+}
+
+#
+# We may now deploy into the application.
+#
+# Note we use our current runtime for the deploy runtime; we assume (for now)
+# we're using a system build of perl.
+#
+
+#
+# Create a runtime symlink pointing to /usr.
+#
+
+symlink("/usr", "$target/runtime");
+
+
+my @cmd = ("perl", "auto-deploy",
+	    "--target", "$target/deployment",
+	    '--override', "WRAP_PERL_TOOL=wrap_perl_app",
+	    '--override', "WRAP_PYTHON_TOOL=wrap_python_app",
+	    "--override", "SHELL=/bin/bash",
+	    abs_path($autodeploy_config));
+
+my $cmd = "cd $dev_container; ./bootstrap $runtime";
+print STDERR "Bootstrap with $cmd\n";
+my $rc = system($cmd);
+if ($rc != 0) {
+    die "Error bootstrapping";
+}
+my $cmd = "cd $dev_container; . user-env.sh; make SHELL=/bin/bash";
+print STDERR "Build with $cmd\n";
+my $rc = system("bash", "-c", $cmd);
+if ($rc != 0) {
+    die "Error building";
+}
+my $cmd = "cd $dev_container; . user-env.sh; @cmd";
+print STDERR "deploy with $cmd\n";
+my $rc = system("bash", "-c", $cmd);
+if ($rc != 0) {
+    die "Error deploying";
+}
+
+#
+# And write our user-init script.
+#
+
+write_user_bash_init("$target/user-env.sh", $banner);
+write_user_csh_init("$target/user-env.csh", $banner);
+write_user_zsh_init("$target/user-env.zsh", $banner);
+
+sub write_user_bash_init
+{
+    my($file, $banner) = @_;
+    open(F, ">", $file) or die "Cannot write $file: $!";
+    print F <<'EOF';
+#!/bin/sh
+
+_dir=`dirname "$BASH_ARGV[0]"`
+
+export KB_TOP="$_dir/deployment"
+export KB_RUNTIME="$_dir/runtime"
+export KB_PERL_PATH="$_dir/deployment/lib"
+export PATH=$KB_RUNTIME/bin:$KB_TOP/bin:$PATH
+export PERL5LIB=$KB_PERL_PATH
+
+cat <<EBANNER
+EOF
+    print F "\n$banner\n\nEBANNER\n";
+
+    close(F);
+    chmod(0755, $file);
+}
+
+sub write_user_zsh_init
+{
+    my($file, $banner) = @_;
+    open(F, ">", $file) or die "Cannot write $file: $!";
+    print F <<'EOF';
+#!/bin/sh
+
+_dir=`dirname "$0"`
+_dir=`cd "$_dir"; pwd`
+
+export KB_TOP="$_dir/deployment"
+export KB_RUNTIME="$_dir/runtime"
+export KB_PERL_PATH="$_dir/deployment/lib"
+export PATH=$KB_RUNTIME/bin:$KB_TOP/bin:$PATH
+export PERL5LIB=$KB_PERL_PATH
+
+cat <<EBANNER
+EOF
+    print F "\n$banner\n\nEBANNER\n";
+    close(F);
+    chmod(0755, $file);
+}
+
+sub write_user_csh_init
+{
+    my($file, $banner) = @_;
+    open(F, ">", $file) or die "Cannot write $file: $!";
+    print F <<EOF;
+
+set kb_cmd=(\$_)
+set kb_path=`echo \$kb_cmd | perl -ne '/^\\s*source\\s+"?(.*)"?\$/ and print "\$1\\n"'`
+set kb_path=`dirname \$kb_path`
+set kb_path=`cd \$kb_path; pwd`
+
+setenv KB_TOP "\$kb_path/deployment"
+setenv KB_RUNTIME "\$kb_path/runtime"
+setenv KB_PERL_PATH "\$kb_path/deployment/lib"
+setenv PATH \$KB_RUNTIME/bin:\$KB_TOP/bin:\$PATH
+setenv PERL5LIB \$KB_PERL_PATH
+
+cat <<EBANNER
+EOF
+
+    print F "\n$banner\n\nEBANNER\n";
+    close(F);
+    chmod(0755, $file);
+}

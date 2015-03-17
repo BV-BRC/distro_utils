@@ -12,6 +12,10 @@ fail () {
     exit 1
 }
 
+warn () {
+    echo $1 1>&2
+}
+
 if [ $# -lt 1 ] ; then
     fail "Usage: $0 runtime-dir"
 else
@@ -27,7 +31,7 @@ if [ ! -d $rt_dir ] ; then
 fi
 
 if [ ! -x $rt_dir/bin/perl ] ; then
-    fail "Runtime directory $rt_dir does not contain an executable perl"
+    warn "Runtime directory $rt_dir does not contain an executable perl"
 fi
 
 if [ -d $top_dir/runtime ] ; then
@@ -56,8 +60,15 @@ if [ -d /Library ] ; then
    mac=":\$KB_TOP/mac/bin"
 fi
 
+#
+# Is this ubuntu?
+#
+if grep Ubuntu /etc/os-release ; then
+    ubuntu=":\$KB_TOP/ubuntu/bin"
+fi
+
 perl_lib="\$KB_TOP/lib"
-path_str="\$KB_TOP/bin${mac}:\$KB_RUNTIME/bin:\$PATH"
+path_str="\$KB_TOP/bin${mac}${ubuntu}:\$KB_RUNTIME/bin:\$PATH"
 
 cat > $top_dir/user-env.sh <<EOF
 export KB_TOP="$top_dir"
