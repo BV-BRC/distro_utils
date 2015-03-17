@@ -3,6 +3,7 @@
 use strict;
 use Cwd 'abs_path';
 use Template;
+use Getopt::Long::Descriptive;
 
 #
 # For now we assume this is run from the distribution directory.
@@ -11,6 +12,13 @@ use Template;
 # Create a deploy.cfg there based on the given target, the runtime configured here,
 # and the localization.cfg.
 #
+
+my($opt, $usage) = describe_options("%c %o dest-dir\n",
+				    ["runtime=s", "Runtime to bake into the deployment", { default => $ENV{KB_RUNTIME} }],
+				    ["help|h", "Print this usage message"]);
+
+print($usage->text), exit if $opt->help;
+print($usage->text), exit 1 if (@ARGV != 1);
 
 @ARGV == 1 or die "Usage: $0 dest-dir\n";
 
@@ -76,7 +84,7 @@ while (my($mod, $hash) = each %hash)
 
 my %vars = (
     target => $dest,
-    runtime => $ENV{KB_RUNTIME},
+    runtime => $opt->runtime,
     );
 open(F, "<", "$here/localize.cfg") or die "Cannot open localize.cfg: $!";
 while (<F>)
