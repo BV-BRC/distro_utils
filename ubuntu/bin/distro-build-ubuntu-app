@@ -9,11 +9,14 @@
 #
 
 use File::Temp;
+use File::Path 'make_path';
 use File::Slurp;
+use File::stat;
 use Data::Dumper;
 use strict;
 use Cwd 'abs_path';
 use File::Copy;
+use Template;
 
 use Getopt::Long::Descriptive;
 
@@ -35,15 +38,34 @@ print($usage->text), exit if $opt->help;
 print($usage->text), exit 1 if (@ARGV != 1);
 
 my $build_dir = shift;
-my $app_dir = "$build_dir/app";
--d $app_dir || mkdir $app_dir || die "cannot mkdir $app_dir: $!";
+
+my $version = $opt->version;
+
+if (!$version)
+{
+    if (open(V, "<", "$build_dir/VERSION"))
+    {
+	$version = <V>;
+	chomp $version;
+	close(V);
+    }
+}
 
 my $app_name = $opt->app_name;
-my $target = "$app_dir/$app_name";
+my $debian_app_name = lc($app_name);
+
+my $relbase = "$build_dir/$debian_app_name-$version";
+
+my $target = "$relbase/usr/share/$debian_app_name";
+my $usrbin = "$relbase/usr/bin";
+my $target_relbin = "../share/$debian_app_name/deployment/bin";
+my $debian_dir = "$relbase/DEBIAN";
+
+make_path($target, $usrbin, $debian_dir);
+$target = abs_path($target);
+
 my $dev_container = "$build_dir/dev_container";
 my $autodeploy_config = "$dev_container/deploy.cfg";
-
--d $target || mkdir $target || die "cannot mkdir $target: $!";
 
 my $banner = $opt->banner;
 if (!$banner && $app_name eq 'KBase')
@@ -61,30 +83,12 @@ $autodeploy_config = abs_path($autodeploy_config);
 $dev_container = abs_path($dev_container);
 -d $dev_container or die "Dev container $dev_container not found\n";
 
-my $version = $opt->version;
-
-if (!$version)
-{
-    if (open(V, "<", "$build_dir/VERSION"))
-    {
-	$version = <V>;
-	chomp $version;
-	close(V);
-    }
-}
-
-if (-d $target)
-{
-    warn "Target directory $target already exists\n";
-}
-
-$target = abs_path($target);
-
 my $runtime = $ENV{KB_RUNTIME};
 if (!$runtime)
 {
     die "Could not find KB_RUNTIME environment variable";
 }
+goto x;
 
 #
 # We may now deploy into the application.
@@ -97,13 +101,14 @@ if (!$runtime)
 # Create a runtime symlink pointing to /usr.
 #
 
-symlink("/usr", "$target/runtime");
+my $system_deploy = "/usr/share/$debian_app_name/deployment";
 
+symlink("/usr", "$target/runtime");
 
 my @cmd = ("perl", "auto-deploy",
 	    "--target", "$target/deployment",
-	    '--override', "WRAP_PERL_TOOL=wrap_perl_app",
-	    '--override', "WRAP_PYTHON_TOOL=wrap_python_app",
+	    '--override', "KB_OVERRIDE_TOP=$system_deploy",
+	    '--override', "KB_OVERRIDE_PERL_PATH=$system_deploy/lib",
 	    "--override", "SHELL=/bin/bash",
 	    abs_path($autodeploy_config));
 
@@ -127,27 +132,87 @@ if ($rc != 0) {
 }
 
 #
+# Remove the auto-deploy created user env scripts
+#
+unlink("$target/deployment/user-env.sh", "$target/deployment/user-env.csh");
+
+#
 # And write our user-init script.
 #
 
-write_user_bash_init("$target/user-env.sh", $banner);
-write_user_csh_init("$target/user-env.csh", $banner);
-write_user_zsh_init("$target/user-env.zsh", $banner);
+write_user_bash_init("$target/user-env.sh", $banner, $system_deploy);
+write_user_csh_init("$target/user-env.csh", $banner, $system_deploy);
+write_user_zsh_init("$target/user-env.zsh", $banner, $system_deploy);
+
+#
+# Symlinks into the usr/bin dir.
+#
+opendir(D, "$target/deployment/bin") or die "cannot opendir $target/deployment/bin:$ !";
+while (my $f = readdir(D))
+{
+    my $p = "$target/deployment/bin/$f";
+    if (-f $p)
+    {
+	symlink("$target_relbin/$f", "$usrbin/$f") or die "Cannot symlink $target_relbin/$f to $usrbin/$f: $!";
+    }
+}
+
+#
+# Now create our Debian package.
+#
+# Populate the DEBIAN directory.
+#
+x:
+my @deps = read_file("$libpath/dependencies");
+chomp @deps;
+my $deps_str = join(", ", @deps);
+
+my $dversion = $version;
+$dversion =~ s/^v//;
+my %vars = (version => $dversion,
+	    deps_str => $deps_str);
+
+my $template = Template->new(OUTPUT_PATH => $debian_dir, INCLUDE_PATH => "$libpath/DEBIAN");
+
+opendir(D, "$libpath/DEBIAN") or die "Cannot open $libpath/DEBIAN: $!";
+for my $f (readdir(D))
+{
+    my $path = "$libpath/DEBIAN/$f";
+    next unless -f $path;
+    next if $f =~ /^#/;
+    my $base = $f;
+    if ($f =~ /(.*)\.tt$/)
+    {
+	$base = $1;
+	my $ok = $template->process($f, \%vars, $base);
+	$ok or die "Failure processing $path: " . $template->error();
+	print "Proc template $f into $debian_dir\n";
+    }
+    else
+    {
+	print "Copy $f\n";
+	copy("$libpath/DEBIAN/$f", "$debian_dir/$f");
+    }
+    my $stat = stat($path);
+    chmod($stat->mode, "$debian_dir/$f");
+}
+
+my $build_cmd = "cd $build_dir; dpkg-deb --build $debian_app_name-$version";
+my $rc = system($build_cmd);
+$rc == 0 or die "Error $rc building package ($build_cmd)\n";
 
 sub write_user_bash_init
 {
-    my($file, $banner) = @_;
+    my($file, $banner, $system_deploy) = @_;
     open(F, ">", $file) or die "Cannot write $file: $!";
-    print F <<'EOF';
+    print F <<EOF;
 #!/bin/sh
 
-_dir=`dirname "$BASH_ARGV[0]"`
-
-export KB_TOP="$_dir/deployment"
-export KB_RUNTIME="$_dir/runtime"
-export KB_PERL_PATH="$_dir/deployment/lib"
-export PATH=$KB_RUNTIME/bin:$KB_TOP/bin:$PATH
-export PERL5LIB=$KB_PERL_PATH
+export KB_TOP="$system_deploy"
+export KB_RUNTIME="/usr"
+export KB_PERL_PATH="$system_deploy/lib"
+export PATH=$system_deploy/bin:\$PATH
+export PERL5LIB=\$KB_PERL_PATH
 
 cat <<EBANNER
 EOF
@@ -159,19 +224,16 @@ EOF
 
 sub write_user_zsh_init
 {
-    my($file, $banner) = @_;
+    my($file, $banner, $system_deploy) = @_;
     open(F, ">", $file) or die "Cannot write $file: $!";
-    print F <<'EOF';
+    print F <<EOF;
 #!/bin/sh
 
-_dir=`dirname "$0"`
-_dir=`cd "$_dir"; pwd`
-
-export KB_TOP="$_dir/deployment"
-export KB_RUNTIME="$_dir/runtime"
-export KB_PERL_PATH="$_dir/deployment/lib"
-export PATH=$KB_RUNTIME/bin:$KB_TOP/bin:$PATH
-export PERL5LIB=$KB_PERL_PATH
+export KB_TOP="$system_deploy"
+export KB_RUNTIME="/usr"
+export KB_PERL_PATH="$system_deploy/lib"
+export PATH=$system_deploy/bin:\$PATH
+export PERL5LIB=\$KB_PERL_PATH
 
 cat <<EBANNER
 EOF
@@ -182,19 +244,14 @@ EOF
 
 sub write_user_csh_init
 {
-    my($file, $banner) = @_;
+    my($file, $banner, $system_deploy) = @_;
     open(F, ">", $file) or die "Cannot write $file: $!";
     print F <<EOF;
 
-set kb_cmd=(\$_)
-set kb_path=`echo \$kb_cmd | perl -ne '/^\\s*source\\s+"?(.*)"?\$/ and print "\$1\\n"'`
-set kb_path=`dirname \$kb_path`
-set kb_path=`cd \$kb_path; pwd`
-
-setenv KB_TOP "\$kb_path/deployment"
-setenv KB_RUNTIME "\$kb_path/runtime"
-setenv KB_PERL_PATH "\$kb_path/deployment/lib"
-setenv PATH \$KB_RUNTIME/bin:\$KB_TOP/bin:\$PATH
+setenv KB_TOP "$system_deploy"
+setenv KB_RUNTIME "/usr"
+setenv KB_PERL_PATH "$system_deploy/lib"
+setenv PATH $system_deploy/bin:\$PATH
 setenv PERL5LIB \$KB_PERL_PATH
 
 cat <<EBANNER

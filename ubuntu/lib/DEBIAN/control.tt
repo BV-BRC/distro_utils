@@ -1,0 +1,8 @@
+Package: rasttk
+Version: [% version %]
+Section: Science
+Priority: optional
+Architecture: all
+Depends: [% deps_str %]
+Maintainer: Robert Olson <olson@mcs.anl.gov>
+Description: The RAST toolkit
