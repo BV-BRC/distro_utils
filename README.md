@@ -101,3 +101,6 @@ Creating an updated distribution:
   distro-build-mac-app --app-name RASTtk ../build-mac-1
   distro-build-mac-dmg ../build-mac-1
 
+Ubuntu:
+
+env SHELL=/bin/bash distro-build-ubuntu-app --app-name RASTtk build-dir
