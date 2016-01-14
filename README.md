@@ -80,3 +80,24 @@ globus_token_url
 globus_profile_url
 trust_token_signers
 
+===
+
+Creating an updated distribution:
+
+  519  mkdir rasttk-release-2016-0114
+  520  cd rasttk-release-2016-0114
+  521  (cd ../rasttk-release-2015-0402/distro_utils/; git remote -v)
+  522  (cd ../rasttk-release-2015-0402/RASTtk-Distribution/; git remote -v)
+  523  git clone git@github.com:kbase/distro_utils
+  524  git clone https://github.com/TheSEED/RASTtk-Distribution
+  
+  cd distro_utils
+  ./bootstrap runtime-dir
+  . user-env-sh
+  
+  cd ../RASTtk-Distribution
+  create-manifest
+  checkout-from-manifest ../build-mac-1
+  distro-build-mac-app --app-name RASTtk ../build-mac-1
+  distro-build-mac-dmg ../build-mac-1
+
