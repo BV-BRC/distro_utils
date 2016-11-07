@@ -9,6 +9,14 @@ use Config::Simple;
 use Data::Dumper;
 use IPC::Run 'run';
 use GithubRepo;
+use Getopt::Long::Descriptive;
+
+my($opt, $usage) = describe_options("%c %o", 
+	["help|h" => "show this help message"],
+	["no-recurse" => "do not perform recursive dependency lookup"],
+);
+print($usage->text), exit(0) if $opt->help;
+die($usage->text) if @ARGV != 0;
 
 #
 # Create a distribution manifest for the release in the current directory.
@@ -16,8 +24,6 @@ use GithubRepo;
 # Read the distro.cfg file here and parse out the deploy-client, deploy-service,
 # and deploy-master lines.
 #
-
-@ARGV == 0 or die "Usage: $0\n";
 
 my %cfg;
 my %repo;
@@ -72,16 +78,20 @@ while (@mods_to_checkout)
     $hash{$mod} = $hash;
     $info{$mod} = $info;
 
-    my @deps = $repo->get_dependencies($hash);
 
-    print STDERR "$mod => @deps\n" if @deps;
-
-    for my $dep (@deps)
+    if (!$opt->no_recurse)
     {
-	if (!$hash{$dep} && !grep { $_ eq $dep } @mods_to_checkout)
+	my @deps = $repo->get_dependencies($hash);
+
+	print STDERR "$mod => @deps\n" if @deps;
+
+	for my $dep (@deps)
 	{
-	    push(@mods_to_checkout, $dep);
-	    push(@mods, $dep);
+	    if (!$hash{$dep} && !grep { $_ eq $dep } @mods_to_checkout)
+	    {
+		push(@mods_to_checkout, $dep);
+		push(@mods, $dep);
+	    }
 	}
     }
 }
