@@ -69,7 +69,8 @@ if (-d "/Volumes/$volume_name")
     die "Volume $volume_name is already attached; please unmount before proceeding\n";
 }
 
-my $bg_image = "$libpath/mac-background.png";
+my $bg_image = "$libpath/mac-background.tiff";
+#my $bg_image = "$libpath/mac-background.png";
 $bg_image = abs_path($bg_image);
 -f $bg_image or die "Cannot read $bg_image\n";
 
@@ -121,7 +122,8 @@ if (!close(P))
 
 mkdir("$volume/.background") or die "Cannot mkdir $volume/.background: $!";
 
-copy($bg_image, "$volume/.background/background.png");
+copy($bg_image, "$volume/.background/background.tiff");
+#copy($bg_image, "$volume/.background/background.png");
 
 #
 # Invoke applescript to initialize the view.

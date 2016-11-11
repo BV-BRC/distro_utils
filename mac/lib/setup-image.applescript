@@ -27,7 +27,7 @@ on process_disk_image(volumeName, appName)
 				set icon size to iconSize
 				set arrangement to not arranged
 			end tell
-			set background picture of opts to file ".background:background.png"
+			set background picture of opts to file ".background:background.tiff"
 			position of item "Applications" of container window
 			position of item appName of container window
 			set position of item "Applications" to {450, 102}
