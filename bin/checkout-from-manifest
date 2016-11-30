@@ -13,14 +13,12 @@ use Getopt::Long::Descriptive;
 # and the localization.cfg.
 #
 
-my($opt, $usage) = describe_options("%c %o dest-dir\n",
+my($opt, $usage) = describe_options("%c %o dest-dir [deploy-dir]\n",
 				    ["runtime=s", "Runtime to bake into the deployment", { default => $ENV{KB_RUNTIME} }],
 				    ["help|h", "Print this usage message"]);
 
 print($usage->text), exit if $opt->help;
-print($usage->text), exit 1 if (@ARGV != 1);
-
-@ARGV == 1 or die "Usage: $0 dest-dir\n";
+print($usage->text), exit 1 if (@ARGV == 0 || @ARGV > 2);
 
 my $git_base = "https://github.com";
 
@@ -30,6 +28,15 @@ my $dest = shift;
 
 $dest = abs_path($dest);
 my $here = abs_path('.');
+
+my $deploy_dir = shift;
+$deploy_dir //= "$dest/deployment";
+
+if ($deploy_dir !~ m,^/,)
+{
+    $deploy_dir = abs_path($deploy_dir);
+}
+print "Deploy to $deploy_dir\n";
 
 #
 # If this repo as a tag, use that as the version. Otherwise set 
@@ -47,6 +54,10 @@ print "Tag: $tag\n";
 my $version = $tag || "$date-$time";
 
 open(V, ">", "$dest/VERSION");
+print V "$version\n";
+close(V);
+
+open(V, ">", "$deploy_dir/VERSION");
 print V "$version\n";
 close(V);
 
@@ -83,7 +94,7 @@ while (my($mod, $hash) = each %hash)
 #
 
 my %vars = (
-    target => $dest,
+    target => $deploy_dir,
     runtime => $opt->runtime,
     );
 open(F, "<", "$here/localize.cfg") or die "Cannot open localize.cfg: $!";
