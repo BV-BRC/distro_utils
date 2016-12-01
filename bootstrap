@@ -63,8 +63,10 @@ fi
 #
 # Is this ubuntu?
 #
-if grep Ubuntu /etc/os-release ; then
-    ubuntu=":\$KB_TOP/ubuntu/bin"
+if [ -f /etc/os-release ] ; then
+    if grep Ubuntu /etc/os-release ; then
+	ubuntu=":\$KB_TOP/ubuntu/bin"
+    fi
 fi
 
 perl_lib="\$KB_TOP/lib"
