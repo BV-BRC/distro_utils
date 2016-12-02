@@ -14,11 +14,23 @@ use Getopt::Long::Descriptive;
 #
 
 my($opt, $usage) = describe_options("%c %o dest-dir [deploy-dir]\n",
+				    ["setenv-file=s", "File to copy into deployment setenv.sh"],
 				    ["runtime=s", "Runtime to bake into the deployment", { default => $ENV{KB_RUNTIME} }],
 				    ["help|h", "Print this usage message"]);
 
 print($usage->text), exit if $opt->help;
 print($usage->text), exit 1 if (@ARGV == 0 || @ARGV > 2);
+
+my $setenv_file;
+if ($opt->setenv_file)
+{
+    $setenv_file = $opt->setenv_file;
+}
+elsif (-f "setenv.sh")
+{
+    $setenv_file = abs_path("setenv.sh");
+    print STDERR "Using local setenv.sh file for environment setup in deployment\n";
+}
 
 my $git_base = "https://github.com";
 
@@ -108,6 +120,12 @@ close(F);
 
 my $tmpl = Template->new({ ABSOLUTE => 1 });
 $tmpl->process("$here/distro.cfg", \%vars, "$dest/dev_container/deploy.cfg");
+
+if ($setenv_file)
+{
+    my $rc = system("cp", $setenv_file, "$dest/dev_container/setenv.sh");
+    $rc == 0 or warn "Warning: error copying setenv file $setenv_file to $dest/dev_container/setenv.sh\n";
+}
 
 sub checkout
 {
