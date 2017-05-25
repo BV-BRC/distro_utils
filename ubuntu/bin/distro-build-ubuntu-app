@@ -44,6 +44,18 @@ if ($opt->ignore_missing_dependencies)
     $ENV{KB_IGNORE_MISSING_DEPENDENCIES} = 1;
 }
 
+#
+# Test for Sort::Toplogical; this is required for completely correct building.
+#
+
+eval {
+    require Sort::Topological;
+};
+if ($@)
+{
+    die "Sort::Topological is required for correct building. You may install using\nsudo apt-get install cpanminus; sudo cpanm Sort::Topological\n";
+}
+
 my $build_dir = shift;
 
 my $version = $opt->version;
