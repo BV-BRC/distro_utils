@@ -28,6 +28,7 @@ my $rasttk_banner = "Welcome to the RASTtk interactive shell. Please visit http:
 my $default_app_name = "KBase";
 
 my($opt, $usage) = describe_options("%c %o build-dir\n",
+				    ["ignore-missing-dependencies", "Ignore missing dependencies on build"],
 				    ["app-name=s", "application name", { default => $default_app_name }],
 				    ["version=s", "version string for this release"],
 				    ["icon=s", "icon to use for the dmg", { default => $default_icon }],
@@ -36,6 +37,11 @@ my($opt, $usage) = describe_options("%c %o build-dir\n",
 
 print($usage->text), exit if $opt->help;
 print($usage->text), exit 1 if (@ARGV != 1);
+
+if ($opt->ignore_missing_dependencies)
+{
+    $ENV{KB_IGNORE_MISSING_DEPENDENCIES} = 1;
+}
 
 my $build_dir = shift;
 my $app_dir = "$build_dir/app";
