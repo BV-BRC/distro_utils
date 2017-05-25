@@ -29,13 +29,20 @@ my $rasttk_banner = "Welcome to the RASTtk interactive shell. Please visit http:
 my $default_app_name = "KBase";
 
 my($opt, $usage) = describe_options("%c %o build-dir\n",
+				    ["ignore-missing-dependencies", "Ignore missing dependencies on build"],
 				    ["app-name=s", "application name", { default => $default_app_name }],
 				    ["version=s", "version string for this release"],
+				    ["description=s", "description string for the Debian package"],
 				    ["banner=s", "banner to show upon starting terminal"],
 				    ["help|h", "print this usage message"]);
 
 print($usage->text), exit if $opt->help;
 print($usage->text), exit 1 if (@ARGV != 1);
+
+if ($opt->ignore_missing_dependencies)
+{
+    $ENV{KB_IGNORE_MISSING_DEPENDENCIES} = 1;
+}
 
 my $build_dir = shift;
 
@@ -88,7 +95,6 @@ if (!$runtime)
 {
     die "Could not find KB_RUNTIME environment variable";
 }
-goto x;
 
 #
 # We may now deploy into the application.
@@ -162,15 +168,38 @@ while (my $f = readdir(D))
 #
 # Populate the DEBIAN directory.
 #
-x:
-my @deps = read_file("$libpath/dependencies");
-chomp @deps;
+
+#my @deps = read_file("$libpath/dependencies");
+#chomp @deps;
+
+# use find-perl-deps to generate the depedency list
+
+#
+# Need cpanminus for patching additional modules in the postinstall.
+#
+my @deps = qw(cpanminus);
+
+open(DEP, "-|", "find-perl-deps", "$target/deployment") or die "Cannot run find-perl-deps: $!";
+while (<DEP>)
+{
+    chomp;
+    push(@deps, $_);
+}
+close(DEP) or die "Error closing find-perl-deps path: $!";
+if ($? != 0)
+{
+    die "Error $? running find-perl-deps\n";
+}
+    
 my $deps_str = join(", ", @deps);
 
 my $dversion = $version;
 $dversion =~ s/^v//;
 my %vars = (version => $dversion,
-	    deps_str => $deps_str);
+	    deps_str => $deps_str,
+	    package => $debian_app_name,
+	    description => $opt->description,
+    );
 
 my $template = Template->new(OUTPUT_PATH => $debian_dir, INCLUDE_PATH => "$libpath/DEBIAN");
 

@@ -1,0 +1,66 @@
+#!/usr/bin/env perl
+
+use strict;
+use Data::Dumper;
+use File::Find;
+
+#
+# search the given directory for perl modules and build list of apt packages.
+#
+# We look for packages that this deployment provides and do not include those.
+#
+
+my %blacklist = map { $_ => 1 } qw (libutf8-perl libsoap-lite-perl);
+my %remap = ('libjson-rpc-legacy-client-perl' => 'libjson-rpc-perl');
+
+@ARGV == 1 or die "Usage: $0 deployment-dir\n";
+
+my $dir = shift;
+
+-d $dir or die "Deployment dir $dir does not exist\n";
+
+my %deps;
+
+find(sub {
+    return unless -f $_ && /\.p[lm]$/;
+    open(P, "<", $_) or die "Cannot open $File::Find::name: $!";
+    while (<P>)
+    {
+	if (/^(require|use)\s+([^\s;]+)/)
+	{
+	    push(@{$deps{$2}}, $File::Find::name);
+	}
+    }
+    close(P);
+}, $dir);
+
+for my $dep (sort keys %deps)
+{
+    my $path = $dep;
+    $path =~ s,::,/,g;
+    $path .= ".pm";
+    if (-f "$dir/lib/$path")
+    {
+	# print "Found $dep in $path\n";
+	next;
+    }
+
+    my $pkg = lc($dep);
+    $pkg =~ s/::/-/g;
+    $pkg = "lib$pkg-perl";
+
+    next if $blacklist{$pkg};
+    $pkg = $remap{$pkg} if exists $remap{$pkg};
+
+    open(C, "-|", "apt-cache", "showpkg", $pkg) or die "Cannot run apt-cache showpkg $pkg: $!";
+    my @out = <C>;
+    close(C) or die "Error closing pipe from apt-cache showpkg $pkg: $!";
+    if (@out)
+    {
+	print "$pkg\n";
+    }
+    else
+    {
+	print STDERR "$pkg not found\n";
+    }
+}

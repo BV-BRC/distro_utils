@@ -51,7 +51,7 @@ if ($deploy_dir !~ m,^/,)
 print "Deploy to $deploy_dir\n";
 
 #
-# If this repo as a tag, use that as the version. Otherwise set 
+# If this repo has a tag, use that as the version. Otherwise set 
 # a datestamp based on the date of the latest commit.
 #
 
