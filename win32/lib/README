@@ -1,0 +1,9 @@
+Variables to the installer:
+
+app_name	app name
+release		release number
+app_dir		App install directory (under Program Files)
+
+DistroDir	the win32 lib directory in distro_utils
+DeployDir	the PATRIC deployment directory
+RuntimeDir	the runtime to be installed 

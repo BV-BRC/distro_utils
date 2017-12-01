@@ -1,0 +1,118 @@
+#!/usr/bin/env perl
+
+#
+# Build a InnoSetup-based Windows installer of the current dev container. 
+#
+# We execute this using cygwin configured for PATRIC builds.
+#
+# Usage: distro-build-win32-installer build-dir runtime-tarball temp installer-file
+#
+#
+# Game plan:
+#
+#   Deploy into a temp-deploy directory
+#   Unpack the runtime tarball into temp-runtime directory
+#   Run the setup compiler to build the installer
+#
+
+use strict;
+use Getopt::Long::Descriptive;
+use File::Path 'make_path';
+use File::Spec::Win32;
+use Cwd 'abs_path';
+
+my $default_banner = "Welcome to the PATRIC command line.";
+
+my($opt, $usage) = describe_options("%c %o build-dir runtime-archive temp-dir installer-file",
+				    ["app-name=s" => "application name", { default => 'PATRIC' }],
+				    ["version=s" => "version string for this release"],
+				    ["banner=s" => "startup banner", { default => $default_banner }],
+				    ["help|h" => "Show this help message"],
+    );
+
+print($usage->text), exit 0 if $opt->help;
+die($usage->text) if @ARGV != 4;
+
+my $app_dest = "c:/progra~1/" . $opt->app_name . "/cli";
+my $app_runtime = "c:/progra~1/" . $opt->app_name . "/runtime";
+
+my $libpath = "$ENV{KB_TOP}/win32/lib";
+-d $libpath or die "Cannot find win32 libpath $libpath\n";
+
+
+#
+# Windows build always ignores deps.
+#
+$ENV{KB_IGNORE_MISSING_DEPENDENCIES} = 1;
+
+require Sort::Topological;
+
+my $build_dir = shift;
+my $runtime_archive = shift;
+my $temp_dir = shift;
+my $installer_file = shift;
+
+-d $build_dir or die "Build dir $build_dir does not exist\n";
+-d $temp_dir or die "Temp dir $temp_dir does not exist\n";
+-f $runtime_archive or die "Runtime archive $runtime_archive does not exist\n";
+
+$build_dir = abs_path($build_dir);
+$runtime_archive = abs_path($runtime_archive);
+$temp_dir = abs_path($temp_dir);
+
+
+my $version = $opt->version;
+if (!$version)
+{
+    if (open(V, "<", "$build_dir/VERSION"))
+    {
+	$version = <V>;
+	chomp $version;
+	close(V);
+    }
+}
+
+my $target = "$temp_dir/deployment";
+make_path($target);
+
+my $dev_container = "$build_dir/dev_container";
+my $autodeploy_config = "$dev_container/deploy.cfg";
+
+die "Missing dev_container in build\n" if (! -d $dev_container);
+die "Missing deploy.config\n" if ! -f $autodeploy_config;
+
+#
+# We bootstrap with our given runtime; this allows the 
+# initial build and generation of tools to work.
+#
+# Then we auto-deploy and override with the eventual
+# destination. 
+#
+# It actually isn't hugely important what the runtime / override
+# settings are here, because we are going to use the 
+# innosetup script to create our executable .cmd files
+# at install time.
+#
+
+chdir($dev_container) or die "chdir $dev_container failed: $!";
+run("./bootstrap", "/usr");
+
+my @cmd = ("perl", "auto-deploy",
+	   "--target", $target,
+	   "--override", "WRAP_PERL_TOOL=wrap_perl_win32",
+	   "--override", "WRAP_PERL_SCRIPT=$dev_container/tools/wrap_perl_win32",
+	   "--override", "KB_OVERRIDE_TOP=$app_dest",
+	   "--override", "KB_OVERRIDE_RUNTIME=$app_runtime",
+	   "deploy.cfg");
+
+run(@cmd);
+
+sub run
+{
+    my $rc = system(@_);
+    if ($rc != 0)
+    {
+	die "Error $rc invoking @_\n";
+    }
+}
+
