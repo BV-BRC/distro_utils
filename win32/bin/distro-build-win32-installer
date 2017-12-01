@@ -97,6 +97,9 @@ die "Missing deploy.config\n" if ! -f $autodeploy_config;
 chdir($dev_container) or die "chdir $dev_container failed: $!";
 run("./bootstrap", "/usr");
 
+my $cmd = "cd $dev_container; pwd; ls -l user-env.sh ; source ./user-env.sh; make";
+run($cmd);
+
 my @cmd = ("perl", "auto-deploy",
 	   "--target", $target,
 	   "--override", "WRAP_PERL_TOOL=wrap_perl_win32",
@@ -104,8 +107,9 @@ my @cmd = ("perl", "auto-deploy",
 	   "--override", "KB_OVERRIDE_TOP=$app_dest",
 	   "--override", "KB_OVERRIDE_RUNTIME=$app_runtime",
 	   "deploy.cfg");
+my $cmd = "pwd; ls; source $dev_container/user-env.sh; " . join(" ", map { "'$_'" } @cmd );
 
-run(@cmd);
+run($cmd);
 
 sub run
 {
