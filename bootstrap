@@ -72,7 +72,8 @@ fi
 #
 # Is this windows?
 #
-if [ `uname -o` = "Cygwin" ] ; then
+osname=`uname -o 2>/dev/null`
+if [ "$osname" = "Cygwin" ] ; then
     win32=":\$KB_TOP/win32/bin"
 fi
 
