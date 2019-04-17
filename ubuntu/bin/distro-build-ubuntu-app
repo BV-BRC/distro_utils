@@ -189,7 +189,9 @@ while (my $f = readdir(D))
 #
 # Need cpanminus for patching additional modules in the postinstall.
 #
-my @deps = qw(cpanminus);
+# 2019-04 - We removed the dependency in the code that necessitated cpanminus.
+#
+my @deps = qw();
 
 open(DEP, "-|", "find-perl-deps", "$target/deployment") or die "Cannot run find-perl-deps: $!";
 while (<DEP>)
