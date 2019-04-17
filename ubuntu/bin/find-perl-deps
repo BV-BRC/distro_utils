@@ -26,7 +26,11 @@ find(sub {
     open(P, "<", $_) or die "Cannot open $File::Find::name: $!";
     while (<P>)
     {
-	if (/^(require|use)\s+([^\s;]+)/)
+	if (/^\s*use\s+base\s+['"]([^\s'";]+)/)
+	{
+	    push(@{$deps{$1}}, $File::Find::name);
+	}
+	elsif (/^(require|use)\s+([^\s;]+)/)
 	{
 	    push(@{$deps{$2}}, $File::Find::name);
 	}
