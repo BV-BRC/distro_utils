@@ -1,11 +1,21 @@
 #!/usr/bin/env perl
 
 #
-# Build an RPM of the current dev container.
+# Build an RPM of this release.
 #
-# The argument is the directory containing the dev_container.
-# We assume the dev_container contains a deploy.cfg created
-# by checkout-from-manifest.
+# We don't require a checkout - this code uses build-tarball to
+# checkout from manifest, rename, and create a tarball for use
+# with rpmbuild.
+#
+# RPM build process
+#
+# Use build-tarball to check out from manifest and reate a tarball of the source tree.
+# Move it to the SOURCES dir
+# Create RPM spec file based on the template spec in the libdir. We can use it
+# as is, but we need to fill in the list of dependent perl modules that we must build.
+# Use rpmbuild to build RPM.
+#
+# Our deployment target will be /usr/share/$app_name-$version
 #
 
 use File::Temp;
@@ -15,7 +25,7 @@ use File::stat;
 use Data::Dumper;
 use strict;
 use Cwd 'abs_path';
-use File::Copy;
+use File::Copy qw(cp copy);
 use Template;
 
 use Getopt::Long::Descriptive;
@@ -26,10 +36,10 @@ my $libpath = "$ENV{KB_TOP}/redhat/lib";
 my $kbase_banner = "Welcome to the KBase interactive shell. Please visit http://kbase.us/developer-zone/ for documentation.";
 my $rasttk_banner = "Welcome to the RASTtk interactive shell. Please visit http://tutorial.theseed.org/ for documentation.";
 
-my $default_app_name = "KBase";
+my $default_app_name = "patric-cli";
 
 my($opt, $usage) = describe_options("%c %o build-dir\n",
-				    ["ignore-missing-dependencies", "Ignore missing dependencies on build"],
+				    ["cpan-cache=s", "cpan cache directory"],
 				    ["app-name=s", "application name", { default => $default_app_name }],
 				    ["version=s", "version string for this release"],
 				    ["description=s", "description string for the Debian package"],
@@ -39,10 +49,7 @@ my($opt, $usage) = describe_options("%c %o build-dir\n",
 print($usage->text), exit if $opt->help;
 print($usage->text), exit 1 if (@ARGV != 1);
 
-if ($opt->ignore_missing_dependencies)
-{
-    $ENV{KB_IGNORE_MISSING_DEPENDENCIES} = 1;
-}
+$ENV{KB_IGNORE_MISSING_DEPENDENCIES} = 1;
 
 #
 # Test for Sort::Toplogical; this is required for completely correct building.
@@ -53,10 +60,27 @@ eval {
 };
 if ($@)
 {
-    die "Sort::Topological is required for correct building. You may install using\nsudo apt-get install cpanminus; sudo cpanm Sort::Topological\n";
+    die "Sort::Topological is required for correct building. You may install using\nsudo yum install cpanminus; sudo cpanm Sort::Topological\n";
 }
 
 my $build_dir = shift;
+
+$build_dir = abs_path($build_dir);
+my $rpmbuild_dir = "$build_dir/rpmbuild";
+print "Building into $build_dir\n";
+make_path($build_dir);
+#
+# We set up rpm build stuff in our build dir. Logic snagged from rmpdev-setuptree.
+#
+
+my @rpm_macros = ("-D", "_topdir $rpmbuild_dir");
+my $rpmdir = rpm_eval('_rpmdir');
+my $srcdir = rpm_eval('_sourcedir');
+my $specdir = rpm_eval('_specdir');
+my $srpmdir = rpm_eval('_srcrpmdir');
+my $builddir = rpm_eval('_builddir');
+
+make_path($rpmdir, $srcdir, $specdir, $srpmdir, $builddir);
 
 my $version = $opt->version;
 
@@ -73,19 +97,6 @@ if (!$version)
 my $app_name = $opt->app_name;
 my $rpm_name = lc($app_name);
 
-my $relbase = "$build_dir/$rpm_name-$version";
-
-my $target = "$relbase/usr/share/$debian_app_name";
-my $usrbin = "$relbase/usr/bin";
-my $target_relbin = "../share/$debian_app_name/deployment/bin";
-my $debian_dir = "$relbase/DEBIAN";
-
-make_path($target, $usrbin, $debian_dir);
-$target = abs_path($target);
-
-my $dev_container = "$build_dir/dev_container";
-my $autodeploy_config = "$dev_container/deploy.cfg";
-
 my $banner = $opt->banner;
 if (!$banner && $app_name eq 'KBase')
 {
@@ -96,211 +107,111 @@ elsif (!$banner && $app_name eq 'RASTtk')
     $banner = $rasttk_banner;
 }
 
-$autodeploy_config = abs_path($autodeploy_config);
--f $autodeploy_config or die "Autodeploy config file $autodeploy_config not found\n";
-
-$dev_container = abs_path($dev_container);
--d $dev_container or die "Dev container $dev_container not found\n";
-
 my $runtime = $ENV{KB_RUNTIME};
 if (!$runtime)
 {
     die "Could not find KB_RUNTIME environment variable";
 }
 
-#
-# We may now deploy into the application.
-#
-# Note we use our current runtime for the deploy runtime; we assume (for now)
-# we're using a system build of perl.
-#
-
-#
-# Create a runtime symlink pointing to /usr.
-#
-
-my $system_deploy = "/usr/share/$debian_app_name/deployment";
-
-symlink("/usr", "$target/runtime");
-
-my @cmd = ("perl", "auto-deploy",
-	    "--target", "$target/deployment",
-	    '--override', "KB_OVERRIDE_TOP=$system_deploy",
-	    '--override', "KB_OVERRIDE_PERL_PATH=$system_deploy/lib",
-	    "--override", "SHELL=/bin/bash",
-	    abs_path($autodeploy_config));
-
-my $cmd = "cd $dev_container; ./bootstrap $runtime";
-print STDERR "Bootstrap with $cmd\n";
-my $rc = system($cmd);
-if ($rc != 0) {
-    die "Error bootstrapping";
-}
-my $cmd = "cd $dev_container; . user-env.sh; make SHELL=/bin/bash";
-print STDERR "Build with $cmd\n";
-my $rc = system("bash", "-c", $cmd);
-if ($rc != 0) {
-    die "Error building";
-}
-my $cmd = "cd $dev_container; . user-env.sh; @cmd";
-print STDERR "deploy with $cmd\n";
-my $rc = system("bash", "-c", $cmd);
-if ($rc != 0) {
-    die "Error deploying";
-}
-
-#
-# Remove the auto-deploy created user env scripts
-#
-unlink("$target/deployment/user-env.sh", "$target/deployment/user-env.csh");
-
-#
-# And write our user-init script.
-#
-
-write_user_bash_init("$target/user-env.sh", $banner, $system_deploy);
-write_user_csh_init("$target/user-env.csh", $banner, $system_deploy);
-write_user_zsh_init("$target/user-env.zsh", $banner, $system_deploy);
-
-#
-# Symlinks into the usr/bin dir.
-#
-opendir(D, "$target/deployment/bin") or die "cannot opendir $target/deployment/bin:$ !";
-while (my $f = readdir(D))
+my $tmp = File::Temp->new();
+close($tmp);
+my $rc = system("build-tarball", $build_dir, $opt->app_name . "-%s", "$tmp");
+open(T, "<", "$tmp") or die "cannot open $tmp:$ !";
+$_ = <T>;
+chomp;
+my($version, $tarfile) = /^(\S+)\s+(.*)/;
+close(T);
+if (! -f $tarfile)
 {
-    my $p = "$target/deployment/bin/$f";
-    if (-f $p)
-    {
-	symlink("$target_relbin/$f", "$usrbin/$f") or die "Cannot symlink $target_relbin/$f to $usrbin/$f: $!";
-    }
+    die "Tarfile $tarfile does not exist\n";
 }
+copy($tarfile, $srcdir) or die "error copying $tarfile to $srcdir: $!";
 
 #
-# Now create our Debian package.
-#
-# Populate the DEBIAN directory.
+# Read the package list and the package spec, writing out our spec with the
+# appropriate install commands.
 #
 
-#my @deps = read_file("$libpath/dependencies");
-#chomp @deps;
+my @build_mods;
+open(PKG, "<", "$libpath/perl-build-modules") or die "Cannot read $libpath/perl-build-modules: $!";
+@build_mods = <PKG>;
+chomp @build_mods;
+close(PKG);
 
-# use find-perl-deps to generate the depedency list
-
-#
-# Need cpanminus for patching additional modules in the postinstall.
-#
-# 2019-04 - We removed the dependency in the code that necessitated cpanminus.
-#
-my @deps = qw();
-
-open(DEP, "-|", "find-perl-deps", "$target/deployment") or die "Cannot run find-perl-deps: $!";
-while (<DEP>)
+my @req_mods;
+open(PKG, "<", "$libpath/perl-requires") or die "Cannot read $libpath/perl-requires: $!";
+while (<PKG>)
 {
     chomp;
-    push(@deps, $_);
+    s/::/-/g;
+    # Hackfix
+    s/^Term-ReadKey$/TermReadKey/;
+    push(@req_mods, "perl-$_");
 }
-close(DEP) or die "Error closing find-perl-deps path: $!";
-if ($? != 0)
+close(PKG);
+
+open(SPEC, "<", "$libpath/package.spec") or die "Cannot read $libpath/package.spec: $!";
+open(WSPEC, ">", "$specdir/package.spec") or die "Cannot write $specdir/package.spec: $!";
+
+#
+# Write global settings
+#
+print WSPEC "\%global name $rpm_name\n";
+print WSPEC "\%global version $version\n";
+print WSPEC "\%global source \%{name}-\%{version}.tar.gz\n";
+print WSPEC "\%global _topdir $rpmbuild_dir\n";
+
+my @cpanm_args = ("--reinstall");
+if ($opt->cpan_cache)
 {
-    die "Error $? running find-perl-deps\n";
+    push(@cpanm_args, "--mirror", $opt->cpan_cache);
+    push(@cpanm_args, "--mirror", "http://www.cpan.org");
+    push(@cpanm_args, "--save-dists", $opt->cpan_cache);
 }
-    
-my $deps_str = join(", ", @deps);
+push(@cpanm_args, "--notest");
 
-my $dversion = $version;
-$dversion =~ s/^v//;
-my %vars = (version => $dversion,
-	    deps_str => $deps_str,
-	    package => $debian_app_name,
-	    description => $opt->description,
-    );
-
-my $template = Template->new(OUTPUT_PATH => $debian_dir, INCLUDE_PATH => "$libpath/DEBIAN");
-
-opendir(D, "$libpath/DEBIAN") or die "Cannot open $libpath/DEBIAN: $!";
-for my $f (readdir(D))
+while (<SPEC>)
 {
-    my $path = "$libpath/DEBIAN/$f";
-    next unless -f $path;
-    next if $f =~ /^#/;
-    my $base = $f;
-    if ($f =~ /(.*)\.tt$/)
+    if (/^# PERL MODULES/)
     {
-	$base = $1;
-	my $ok = $template->process($f, \%vars, $base);
-	$ok or die "Failure processing $path: " . $template->error();
-	print "Proc template $f into $debian_dir\n";
+	my @xmods = @build_mods;
+	while (@xmods)
+	{
+	    my @chunk = splice(@xmods, 0, 10);
+	    print WSPEC "cpanm @cpanm_args @chunk\n";
+	}
+    }
+    elsif (/^Requires/)
+    {
+	my @xmods = @req_mods;
+	while (@xmods)
+	{
+	    my @chunk = splice(@xmods, 0, 10);
+	    print WSPEC "Requires: @chunk\n";
+	}
+	print WSPEC $_;
     }
     else
     {
-	print "Copy $f\n";
-	copy("$libpath/DEBIAN/$f", "$debian_dir/$f");
+	print WSPEC $_;
     }
-    my $stat = stat($path);
-    chmod($stat->mode, "$debian_dir/$f");
 }
+close(SPEC);
+close(WSPEC);
 
-my $build_cmd = "cd $build_dir; dpkg-deb --build $debian_app_name-$version";
-my $rc = system($build_cmd);
-$rc == 0 or die "Error $rc building package ($build_cmd)\n";
+#
+# We also copy our version of check-buildroot that ignores pod files
+#
+copy("$libpath/check-buildroot", $rpmbuild_dir);
+chmod(0775, "$rpmbuild_dir/check-buildroot");
 
-sub write_user_bash_init
+sub rpm_eval
 {
-    my($file, $banner, $system_deploy) = @_;
-    open(F, ">", $file) or die "Cannot write $file: $!";
-    print F <<EOF;
-#!/bin/sh
+    my($macro) = @_;
+    open(F, "-|", "rpm", @rpm_macros, "--eval", "\%{$macro}") or die "Cannot run rpm: $!";
+    my $l = <F>;
+    chomp $l;
 
-export KB_TOP="$system_deploy"
-export KB_RUNTIME="/usr"
-export KB_PERL_PATH="$system_deploy/lib"
-export PATH=$system_deploy/bin:\$PATH
-export PERL5LIB=\$KB_PERL_PATH
-
-cat <<EBANNER
-EOF
-    print F "\n$banner\n\nEBANNER\n";
-
-    close(F);
-    chmod(0755, $file);
-}
-
-sub write_user_zsh_init
-{
-    my($file, $banner, $system_deploy) = @_;
-    open(F, ">", $file) or die "Cannot write $file: $!";
-    print F <<EOF;
-#!/bin/sh
-
-export KB_TOP="$system_deploy"
-export KB_RUNTIME="/usr"
-export KB_PERL_PATH="$system_deploy/lib"
-export PATH=$system_deploy/bin:\$PATH
-export PERL5LIB=\$KB_PERL_PATH
-
-cat <<EBANNER
-EOF
-    print F "\n$banner\n\nEBANNER\n";
-    close(F);
-    chmod(0755, $file);
-}
-
-sub write_user_csh_init
-{
-    my($file, $banner, $system_deploy) = @_;
-    open(F, ">", $file) or die "Cannot write $file: $!";
-    print F <<EOF;
-
-setenv KB_TOP "$system_deploy"
-setenv KB_RUNTIME "/usr"
-setenv KB_PERL_PATH "$system_deploy/lib"
-setenv PATH $system_deploy/bin:\$PATH
-setenv PERL5LIB \$KB_PERL_PATH
-
-cat <<EBANNER
-EOF
-
-    print F "\n$banner\n\nEBANNER\n";
-    close(F);
-    chmod(0755, $file);
+    print "$macro => $l\n";
+    return $l;
 }

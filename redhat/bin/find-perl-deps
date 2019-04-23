@@ -1,0 +1,112 @@
+#!/usr/bin/env perl
+
+use strict;
+use Data::Dumper;
+use File::Find;
+use LWP::UserAgent;
+use JSON::XS;
+
+#
+# search the given directory for perl modules and build list of RPM packages.
+#
+# We look for packages that this deployment provides and do not include those.
+#
+
+my %blacklist; map { $_ => 1 } qw (base lib constant);
+my %remap; # = ('libjson-rpc-legacy-client-perl' => 'libjson-rpc-perl');
+
+#
+# we pass in centos avail; we assume for now we are running on fedora
+# and get the list via yum info.
+#
+@ARGV == 4 or die "Usage: $0 deployment-dir centos-avail build-list require-list\n";
+
+my $dir = shift;
+my $centos = shift;
+my $build_out = shift;
+my $require_out = shift;
+
+open(BUILD, ">", $build_out) or die "cannot write $build_out: $!\n";
+open(REQUIRE, ">", $require_out) or die "cannot write $require_out: $!\n";
+
+-d $dir or die "Deployment dir $dir does not exist\n";
+
+my %deps;
+
+find(sub {
+    return unless -f $_ && /\.p[lm]$/;
+    open(P, "<", $_) or die "Cannot open $File::Find::name: $!";
+    while (<P>)
+    {
+	if (/^\s*use\s+base\s+['"]([^\s'";]+)/)
+	{
+	    push(@{$deps{$1}}, $File::Find::name);
+	}
+	elsif (/^(require|use)\s+([^\s;]+)/)
+	{
+	    push(@{$deps{$2}}, $File::Find::name);
+	}
+    }
+    close(P);
+}, $dir);
+
+my %pkgs;
+open(L, "-|", "yum", "list", "perl-*");
+while (<L>)
+{
+    my($name) = /(perl-\S+)\.[^\s.]+(\s|$)/;
+    $pkgs{$name} = 1;
+}
+close(L);
+
+my $ua = LWP::UserAgent->new;
+my $base_url = "https://fastapi.metacpan.org/v1/release";
+
+my %centos_pkgs;
+open(CA, "<", $centos) or die "Cannot open $centos: $!";
+while (<CA>)
+{
+    my($name) = /(perl-\S+)\.[^\s.]+(\s|$)/;
+    $centos_pkgs{$name} = 1;
+}
+
+for my $dep (sort keys %deps)
+{
+    my $path = $dep;
+    $path =~ s,::,/,g;
+    $path .= ".pm";
+    if (-f "$dir/lib/$path")
+    {
+	# print "Found $dep in $path\n";
+	next;
+    }
+
+    my $pkg = $dep;
+    $pkg =~ s/::/-/g;
+    my $pkg_rpm = "perl-$pkg";
+
+    next if $blacklist{$pkg};
+    #    $pkg = $remap{$pkg} if exists $remap{$pkg};
+
+    if ($centos_pkgs{$pkg_rpm} && $pkgs{$pkg_rpm})
+    {
+	print "REQ $pkg_rpm\n";
+	print REQUIRE "$pkg_rpm\n";
+    }
+    else
+    {
+	if ($dep =~ /Bio::(P3|KBase)/)
+	{
+	    next;
+	}
+	my $url = "$base_url/$pkg";
+	# print "Get $url\n";
+	my $res = $ua->get($url);
+	if ($res->is_success)
+	{
+	    my $obj = decode_json($res->content);
+	    print "BUILD $pkg ($obj->{version})\n";
+	    print BUILD "$pkg\n";
+	}
+    }
+}

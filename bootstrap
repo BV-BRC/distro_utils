@@ -66,6 +66,8 @@ fi
 if [ -f /etc/os-release ] ; then
     if grep Ubuntu /etc/os-release ; then
 	ubuntu=":\$KB_TOP/ubuntu/bin"
+    elif egrep 'Fedora|CentOS' /etc/os-release ; then
+	redhat=":\$KB_TOP/redhat/bin"
     fi
 fi
 
@@ -78,7 +80,7 @@ if [ "$osname" = "Cygwin" ] ; then
 fi
 
 perl_lib="\$KB_TOP/lib"
-path_str="\$KB_TOP/bin${mac}${ubuntu}${win32}:\$KB_RUNTIME/bin:\$PATH"
+path_str="\$KB_TOP/bin${mac}${redhat}${ubuntu}${win32}:\$KB_RUNTIME/bin:\$PATH"
 
 cat > $top_dir/user-env.sh <<EOF
 export KB_TOP="$top_dir"
