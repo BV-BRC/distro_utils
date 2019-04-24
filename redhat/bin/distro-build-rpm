@@ -42,6 +42,7 @@ my($opt, $usage) = describe_options("%c %o build-dir\n",
 				    ["cpan-cache=s", "cpan cache directory"],
 				    ["app-name=s", "application name", { default => $default_app_name }],
 				    ["version=s", "version string for this release"],
+				    ["release=i", "RPM release number for this release", { default => 1 }],
 				    ["description=s", "description string for the Debian package"],
 				    ["banner=s", "banner to show upon starting terminal"],
 				    ["help|h", "print this usage message"]);
@@ -128,33 +129,38 @@ if (! -f $tarfile)
 copy($tarfile, $srcdir) or die "error copying $tarfile to $srcdir: $!";
 
 #
-# Read the package list and the package spec, writing out our spec with the
-# appropriate install commands.
+# Read the perl module list. We use yum list to get a list of the
+# modules available in this distribution and add those to the requires
+# list. Those not present there are built locally.
 #
 
 my %skip_build = map { $_ => 1 } qw(MongoDB Sim Dancer2);
 
+my %yum_pkgs;
+open(L, "-|", "yum", "list", "perl-*");
+while (<L>)
+{
+    my($name) = /(perl-\S+)\.[^\s.]+(\s|$)/;
+    $yum_pkgs{$name} = 1;
+}
+close(L);
+
 my @build_mods;
-open(PKG, "<", "$libpath/perl-build-modules") or die "Cannot read $libpath/perl-build-modules: $!";
+my @require_mods;
+open(PKG, "<", "$libpath/perl-modules") or die "Cannot read $libpath/perl-modules: $!";
 while (<PKG>)
 {
     chomp;
     next if $skip_build{$_};
-    push(@build_mods, $_);
-}
-close(PKG);
-
-my @req_mods;
-open(PKG, "<", "$libpath/perl-requires") or die "Cannot read $libpath/perl-requires: $!";
-while (<PKG>)
-{
-    chomp;
-    s/::/-/g;
-    # Hackfix
-    s/^Term-ReadKey$/TermReadKey/;
-    s/^perl-Term-ReadKey$/perl-TermReadKey/;
-    $_ = "perl-$_" unless /^perl/;
-    push(@req_mods, $_);
+    my $pkg_rpm = to_rpm($_);
+    if ($yum_pkgs{$pkg_rpm})
+    {
+	push(@require_mods, $pkg_rpm);
+    }
+    else
+    {
+	push(@build_mods, $_);
+    }
 }
 close(PKG);
 
@@ -166,6 +172,7 @@ open(WSPEC, ">", "$specdir/package.spec") or die "Cannot write $specdir/package.
 #
 print WSPEC "\%global name $rpm_name\n";
 print WSPEC "\%global version $version\n";
+print WSPEC "\%global release " . $opt->release . "\n";
 print WSPEC "\%global source \%{name}-\%{version}.tar.gz\n";
 print WSPEC "\%global _topdir $rpmbuild_dir\n";
 
@@ -191,7 +198,7 @@ while (<SPEC>)
     }
     elsif (/^Requires/)
     {
-	my @xmods = @req_mods;
+	my @xmods = @require_mods;
 	while (@xmods)
 	{
 	    my @chunk = splice(@xmods, 0, 10);
@@ -222,4 +229,12 @@ sub rpm_eval
 
     print "$macro => $l\n";
     return $l;
+}
+
+sub to_rpm
+{
+    my($pkg) = @_;
+    s/^Term::ReadKey$/TermReadKey/;
+    $pkg =~ s/::/-/g;
+    return "perl-$pkg";
 }

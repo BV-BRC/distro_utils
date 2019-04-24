@@ -3,7 +3,7 @@
 
 Name:           %name
 Version:        %version
-Release:        2%{?dist}
+Release:        %{!release:1}%{?dist}
 Summary:        The PATRIC Command Line Interface
 
 License:        MIT
@@ -43,13 +43,20 @@ source ./user-env.sh
 perl auto-deploy \
      --target %{buildroot}/usr/share/%name-%version \
      --override KB_OVERRIDE_TOP=/usr/share/%name-%version \
-     --override KB_OVERRIDE_PERL_PATH=/usr/share/%name-%version/lib:/usr/share/%name-%version/local/lib \
+     --override KB_OVERRIDE_PERL_PATH=/usr/share/%name-%version/lib:/usr/share/%name-%version/local/lib/perl5 \
      --override KB_OVERRIDE_PYTHON_PATH=/usr/share/%name-%version/lib \
-      deploy.cfg
+     deploy.cfg
 
-%files
-/usr/share/%name-%version
+echo "/usr/share/%name-%version" > %{_topdir}/files
+mkdir -p %{buildroot}/usr/bin
 
+for file in %{buildroot}/usr/share/%name-%version/bin/*; do
+    b=`basename $file`
+    ln -s /usr/share/%name-%version/bin/$b %{buildroot}/usr/bin/$b
+    echo "/usr/bin/$b" >> %{_topdir}/files
+done
+
+%files -f %{_topdir}/files
 
 %changelog
 * Wed Apr 17 2019 vagrant
