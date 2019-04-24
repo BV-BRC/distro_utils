@@ -106,7 +106,7 @@ for my $dep (sort keys %deps)
 	{
 	    my $obj = decode_json($res->content);
 	    print "BUILD $pkg ($obj->{version})\n";
-	    print BUILD "$pkg\n";
+	    print BUILD "$dep\n";
 	}
     }
 }

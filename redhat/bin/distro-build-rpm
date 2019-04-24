@@ -132,10 +132,16 @@ copy($tarfile, $srcdir) or die "error copying $tarfile to $srcdir: $!";
 # appropriate install commands.
 #
 
+my %skip_build = map { $_ => 1 } qw(MongoDB Sim Dancer2);
+
 my @build_mods;
 open(PKG, "<", "$libpath/perl-build-modules") or die "Cannot read $libpath/perl-build-modules: $!";
-@build_mods = <PKG>;
-chomp @build_mods;
+while (<PKG>)
+{
+    chomp;
+    next if $skip_build{$_};
+    push(@build_mods, $_);
+}
 close(PKG);
 
 my @req_mods;
@@ -146,7 +152,9 @@ while (<PKG>)
     s/::/-/g;
     # Hackfix
     s/^Term-ReadKey$/TermReadKey/;
-    push(@req_mods, "perl-$_");
+    s/^perl-Term-ReadKey$/perl-TermReadKey/;
+    $_ = "perl-$_" unless /^perl/;
+    push(@req_mods, $_);
 }
 close(PKG);
 
