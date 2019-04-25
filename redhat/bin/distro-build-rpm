@@ -234,7 +234,7 @@ sub rpm_eval
 sub to_rpm
 {
     my($pkg) = @_;
-    s/^Term::ReadKey$/TermReadKey/;
+    $pkg =~ s/^Term::ReadKey$/TermReadKey/;
     $pkg =~ s/::/-/g;
     return "perl-$pkg";
 }
