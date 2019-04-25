@@ -2,7 +2,7 @@
 #
 # this is for centos7:
 #
-%_python_bytecompile_errors_terminate_build 0
+%global _python_bytecompile_errors_terminate_build 0
 %global debug_package %{nil}
 
 %global __arch_install_post [ "%{buildarch}" = "noarch" ] || QA_CHECK_RPATHS=1 ; case "${QA_CHECK_RPATHS:-}" in [1yY]*) /usr/lib/rpm/check-rpaths ;; esac ; %{_topdir}/check-buildroot
