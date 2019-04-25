@@ -70,3 +70,6 @@ Sphinx::Search
 Term::ReadLine
 Text::Table
 LWP::Protocol::https
+Parse::Yapp
+Graph
+List::MoreUtils

@@ -1,6 +1,11 @@
 %global _python_bytecompile_extra 0
 %global debug_package %{nil}
 
+%__arch_install_post \
+    [ "%{buildarch}" = "noarch" ] || QA_CHECK_RPATHS=1 ; \
+    case "${QA_CHECK_RPATHS:-}" in [1yY]*) /usr/lib/rpm/check-rpaths ;; esac \
+    %{_topdir}/check-buildroot
+
 Name:           %name
 Version:        %version
 Release:        %{!release:1}%{?dist}
@@ -10,7 +15,8 @@ License:        MIT
 URL:            https://patricbrc.org/
 Source0:        %source
 
-BuildRequires:  perl-Template-Toolkit perl-File-Slurp perl-Path-Tiny perl-local-lib gcc-c++
+BuildRequires:  perl-Template-Toolkit perl-File-Slurp perl-Path-Tiny perl-local-lib gcc-c++ perl-Config-Simple 
+BuildRequires:  perl-Graph perl-List-MoreUtils
 Requires:       perl
 
 AutoReqProv: no
