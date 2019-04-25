@@ -16,7 +16,7 @@ License:        MIT
 URL:            https://patricbrc.org/
 Source0:        %source
 
-BuildRequires:  perl-Template-Toolkit perl-File-Slurp perl-Path-Tiny perl-local-lib gcc-c++ perl-Config-Simple 
+BuildRequires:  perl-Template-Toolkit perl-File-Slurp gcc-c++ perl-Config-Simple 
 BuildRequires:  perl-List-MoreUtils
 Requires:       perl
 
