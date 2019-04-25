@@ -72,3 +72,4 @@ LWP::Protocol::https
 Parse::Yapp
 Graph
 List::MoreUtils
+Term::ReadKey
