@@ -164,6 +164,21 @@ while (<PKG>)
 }
 close(PKG);
 
+#
+# we might have distro specific packages.
+#
+my $distro_pkg = "$libpath/packages." . rpm_eval('dist');
+if (open(PKG, "<", $distro_pkg)
+{
+    print "Adding packages from $distro_pkg\n";
+    while (<PKG>)
+    {
+	chomp;
+	push(@require_mods, $_);
+    }
+    close(PKG);
+}
+
 open(SPEC, "<", "$libpath/package.spec") or die "Cannot read $libpath/package.spec: $!";
 open(WSPEC, ">", "$specdir/package.spec") or die "Cannot write $specdir/package.spec: $!";
 
