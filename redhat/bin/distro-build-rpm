@@ -167,7 +167,7 @@ close(PKG);
 #
 # we might have distro specific packages.
 #
-my $distro_pkg = "$libpath/packages." . rpm_eval('dist');
+my $distro_pkg = "$libpath/packages" . rpm_eval('dist');
 if (open(PKG, "<", $distro_pkg))
 {
     print "Adding packages from $distro_pkg\n";
