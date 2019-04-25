@@ -13,7 +13,7 @@ URL:            https://patricbrc.org/
 Source0:        %source
 
 BuildRequires:  perl-Template-Toolkit perl-File-Slurp perl-Path-Tiny perl-local-lib gcc-c++ perl-Config-Simple 
-BuildRequires:  perl-Graph perl-List-MoreUtils
+BuildRequires:  perl-List-MoreUtils
 Requires:       perl
 
 AutoReqProv: no
