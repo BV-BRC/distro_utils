@@ -69,6 +69,8 @@ if [ -f /etc/os-release ] ; then
     elif egrep 'Fedora|CentOS' /etc/os-release ; then
 	redhat=":\$KB_TOP/redhat/bin"
     fi
+elif [ -f /etc/redhat-release ] ; then
+	redhat=":\$KB_TOP/redhat/bin"
 fi
 
 #
