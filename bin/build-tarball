@@ -20,6 +20,7 @@ cp VERSION dev_container/VERSION
 version=`cat VERSION`
 name=`printf $base $version`
 mv dev_container $name
-tar -c -z -f $name.tar.gz --exclude-vcs --exclude-vcs-ignores $name
+# centos7 does not have --exclude-vcs-ignores
+tar -c -z -f $name.tar.gz --exclude-vcs $name
 here=`pwd`
 echo "$version $here/$name.tar.gz" > $names_file
