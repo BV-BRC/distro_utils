@@ -1,10 +1,7 @@
 %global _python_bytecompile_extra 0
 %global debug_package %{nil}
 
-%__arch_install_post \
-    [ "%{buildarch}" = "noarch" ] || QA_CHECK_RPATHS=1 ; \
-    case "${QA_CHECK_RPATHS:-}" in [1yY]*) /usr/lib/rpm/check-rpaths ;; esac \
-    %{_topdir}/check-buildroot
+%global __arch_install_post [ "%{buildarch}" = "noarch" ] || QA_CHECK_RPATHS=1 ; case "${QA_CHECK_RPATHS:-}" in [1yY]*) /usr/lib/rpm/check-rpaths ;; esac %{_topdir}/check-buildroot
 
 Name:           %name
 Version:        %version
