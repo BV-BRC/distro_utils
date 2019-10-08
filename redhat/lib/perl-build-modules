@@ -1,0 +1,11 @@
+DT
+Dancer2
+Lingua::EN::Inflect
+MIME::Base64
+MongoDB
+Proc::ParallelLoop
+Safe
+Set::IntervalTree
+Sphinx::Search
+Term::ReadLine
+Text::Table

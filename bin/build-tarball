@@ -1,0 +1,26 @@
+#!/bin/sh
+
+#
+# Check out and create a tarball.
+#
+
+if [ $# -ne 3 ] ; then
+   echo "Usage: $0 target-dir name-base output-names-file" 1>&2
+   exit 1
+
+fi
+
+target=$1
+base=$2
+names_file=$3
+
+checkout-from-manifest $target
+cd $target
+cp VERSION dev_container/VERSION
+version=`cat VERSION`
+name=`printf $base $version`
+mv dev_container $name
+# centos7 does not have --exclude-vcs-ignores
+tar -c -z -f $name.tar.gz --exclude-vcs $name
+here=`pwd`
+echo "$version $here/$name.tar.gz" > $names_file

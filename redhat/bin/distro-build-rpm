@@ -1,0 +1,255 @@
+#!/usr/bin/env perl
+
+#
+# Build an RPM of this release.
+#
+# We don't require a checkout - this code uses build-tarball to
+# checkout from manifest, rename, and create a tarball for use
+# with rpmbuild.
+#
+# RPM build process
+#
+# Use build-tarball to check out from manifest and reate a tarball of the source tree.
+# Move it to the SOURCES dir
+# Create RPM spec file based on the template spec in the libdir. We can use it
+# as is, but we need to fill in the list of dependent perl modules that we must build.
+# Use rpmbuild to build RPM.
+#
+# Our deployment target will be /usr/share/$app_name-$version
+#
+
+use File::Temp;
+use File::Path 'make_path';
+use File::Slurp;
+use File::stat;
+use Data::Dumper;
+use strict;
+use Cwd 'abs_path';
+use File::Copy qw(cp copy);
+use Template;
+
+use Getopt::Long::Descriptive;
+
+my $libpath = "$ENV{KB_TOP}/redhat/lib";
+-d $libpath or die "Cannot find redhat libpath $libpath\n";
+
+my $kbase_banner = "Welcome to the KBase interactive shell. Please visit http://kbase.us/developer-zone/ for documentation.";
+my $rasttk_banner = "Welcome to the RASTtk interactive shell. Please visit http://tutorial.theseed.org/ for documentation.";
+
+my $default_app_name = "patric-cli";
+
+my($opt, $usage) = describe_options("%c %o build-dir\n",
+				    ["cpan-cache=s", "cpan cache directory"],
+				    ["app-name=s", "application name", { default => $default_app_name }],
+				    ["version=s", "version string for this release"],
+				    ["release=i", "RPM release number for this release", { default => 1 }],
+				    ["description=s", "description string for the Debian package"],
+				    ["banner=s", "banner to show upon starting terminal"],
+				    ["help|h", "print this usage message"]);
+
+print($usage->text), exit if $opt->help;
+print($usage->text), exit 1 if (@ARGV != 1);
+
+$ENV{KB_IGNORE_MISSING_DEPENDENCIES} = 1;
+
+#
+# Test for Sort::Toplogical; this is required for completely correct building.
+#
+
+eval {
+    require Sort::Topological;
+};
+if ($@)
+{
+    die "Sort::Topological is required for correct building. You may install using\nsudo yum install cpanminus; sudo cpanm Sort::Topological\n";
+}
+
+my $build_dir = shift;
+
+$build_dir = abs_path($build_dir);
+my $rpmbuild_dir = "$build_dir/rpmbuild";
+print "Building into $build_dir\n";
+make_path($build_dir);
+#
+# We set up rpm build stuff in our build dir. Logic snagged from rmpdev-setuptree.
+#
+
+my @rpm_macros = ("-D", "_topdir $rpmbuild_dir");
+my $rpmdir = rpm_eval('_rpmdir');
+my $srcdir = rpm_eval('_sourcedir');
+my $specdir = rpm_eval('_specdir');
+my $srpmdir = rpm_eval('_srcrpmdir');
+my $builddir = rpm_eval('_builddir');
+
+make_path($rpmdir, $srcdir, $specdir, $srpmdir, $builddir);
+
+my $version = $opt->version;
+
+if (!$version)
+{
+    if (open(V, "<", "$build_dir/VERSION"))
+    {
+	$version = <V>;
+	chomp $version;
+	close(V);
+    }
+}
+
+my $app_name = $opt->app_name;
+my $rpm_name = lc($app_name);
+
+my $banner = $opt->banner;
+if (!$banner && $app_name eq 'KBase')
+{
+    $banner = $kbase_banner;
+}
+elsif (!$banner && $app_name eq 'RASTtk')
+{
+    $banner = $rasttk_banner;
+}
+
+my $runtime = $ENV{KB_RUNTIME};
+if (!$runtime)
+{
+    die "Could not find KB_RUNTIME environment variable";
+}
+
+my $tmp = File::Temp->new();
+close($tmp);
+my $rc = system("build-tarball", $build_dir, $opt->app_name . "-%s", "$tmp");
+open(T, "<", "$tmp") or die "cannot open $tmp:$ !";
+$_ = <T>;
+chomp;
+my($version, $tarfile) = /^(\S+)\s+(.*)/;
+close(T);
+if (! -f $tarfile)
+{
+    die "Tarfile $tarfile does not exist\n";
+}
+copy($tarfile, $srcdir) or die "error copying $tarfile to $srcdir: $!";
+
+#
+# Read the perl module list. We use yum list to get a list of the
+# modules available in this distribution and add those to the requires
+# list. Those not present there are built locally.
+#
+
+my %skip_build = map { $_ => 1 } qw(MongoDB Sim Dancer2);
+
+my %yum_pkgs;
+open(L, "-|", "yum", "list", "perl-*");
+while (<L>)
+{
+    my($name) = /(perl-\S+)\.[^\s.]+(\s|$)/;
+    $yum_pkgs{$name} = 1;
+}
+close(L);
+
+my @build_mods;
+my @require_mods;
+open(PKG, "<", "$libpath/perl-modules") or die "Cannot read $libpath/perl-modules: $!";
+while (<PKG>)
+{
+    chomp;
+    next if $skip_build{$_};
+    my $pkg_rpm = to_rpm($_);
+    if ($yum_pkgs{$pkg_rpm})
+    {
+	push(@require_mods, $pkg_rpm);
+    }
+    else
+    {
+	push(@build_mods, $_);
+    }
+}
+close(PKG);
+
+#
+# we might have distro specific packages.
+#
+my $distro_pkg = "$libpath/packages" . rpm_eval('dist');
+if (open(PKG, "<", $distro_pkg))
+{
+    print "Adding packages from $distro_pkg\n";
+    while (<PKG>)
+    {
+	chomp;
+	push(@require_mods, $_);
+    }
+    close(PKG);
+}
+
+open(SPEC, "<", "$libpath/package.spec") or die "Cannot read $libpath/package.spec: $!";
+open(WSPEC, ">", "$specdir/package.spec") or die "Cannot write $specdir/package.spec: $!";
+
+#
+# Write global settings
+#
+print WSPEC "\%global name $rpm_name\n";
+print WSPEC "\%global version $version\n";
+print WSPEC "\%global release " . $opt->release . "\n";
+print WSPEC "\%global source \%{name}-\%{version}.tar.gz\n";
+print WSPEC "\%global _topdir $rpmbuild_dir\n";
+
+my @cpanm_args = ("--reinstall");
+if ($opt->cpan_cache)
+{
+    push(@cpanm_args, "--mirror", $opt->cpan_cache);
+    push(@cpanm_args, "--mirror", "http://www.cpan.org");
+    push(@cpanm_args, "--save-dists", $opt->cpan_cache);
+}
+push(@cpanm_args, "--notest");
+
+while (<SPEC>)
+{
+    if (/^# PERL MODULES/)
+    {
+	my @xmods = @build_mods;
+	while (@xmods)
+	{
+	    my @chunk = splice(@xmods, 0, 10);
+	    print WSPEC "cpanm @cpanm_args @chunk\n";
+	}
+    }
+    elsif (/^Requires/)
+    {
+	my @xmods = @require_mods;
+	while (@xmods)
+	{
+	    my @chunk = splice(@xmods, 0, 10);
+	    print WSPEC "Requires: @chunk\n";
+	}
+	print WSPEC $_;
+    }
+    else
+    {
+	print WSPEC $_;
+    }
+}
+close(SPEC);
+close(WSPEC);
+
+#
+# We also copy our version of check-buildroot that ignores pod files
+#
+copy("$libpath/check-buildroot", $rpmbuild_dir);
+chmod(0775, "$rpmbuild_dir/check-buildroot");
+
+sub rpm_eval
+{
+    my($macro) = @_;
+    open(F, "-|", "rpm", @rpm_macros, "--eval", "\%{$macro}") or die "Cannot run rpm: $!";
+    my $l = <F>;
+    chomp $l;
+
+    print "$macro => $l\n";
+    return $l;
+}
+
+sub to_rpm
+{
+    my($pkg) = @_;
+    $pkg =~ s/^Term::ReadKey$/TermReadKey/;
+    $pkg =~ s/::/-/g;
+    return "perl-$pkg";
+}
