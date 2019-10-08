@@ -4,6 +4,7 @@ use strict;
 use Cwd 'abs_path';
 use Template;
 use Getopt::Long::Descriptive;
+use DistroUtils;
 
 #
 # For now we assume this is run from the distribution directory.
@@ -14,12 +15,18 @@ use Getopt::Long::Descriptive;
 #
 
 my($opt, $usage) = describe_options("%c %o dest-dir [deploy-dir]\n",
+				    ['include-path|I=s@', "Look here for configuration file templates", { default => [] }],
 				    ["setenv-file=s", "File to copy into deployment setenv.sh"],
 				    ["runtime=s", "Runtime to bake into the deployment", { default => $ENV{KB_RUNTIME} }],
 				    ["help|h", "Print this usage message"]);
 
 print($usage->text), exit if $opt->help;
 print($usage->text), exit 1 if (@ARGV == 0 || @ARGV > 2);
+
+#
+# We need to make the include path absolute because we chdir.
+#
+my $include_path = [ map { abs_path($_) } @{$opt->include_path} ];
 
 my $setenv_file;
 if ($opt->setenv_file)
@@ -109,17 +116,22 @@ my %vars = (
     target => $deploy_dir,
     runtime => $opt->runtime,
     );
-open(F, "<", "$here/localize.cfg") or die "Cannot open localize.cfg: $!";
-while (<F>)
+if (open(F, "<", "$here/localize.cfg"))
 {
-    chomp;
-    my($key, $value) = /^(\S+)\s+(.*)$/;
-    $vars{$key} = $value;
+    while (<F>)
+    {
+	chomp;
+	my($key, $value) = /^(\S+)\s+(.*)$/;
+	$vars{$key} = $value;
+    }
+    close(F);
 }
-close(F);
+else
+{
+    warn "Note: cannot open localize.cfg: $!";
+}
 
-my $tmpl = Template->new({ ABSOLUTE => 1 });
-$tmpl->process("$here/distro.cfg", \%vars, "$dest/dev_container/deploy.cfg");
+DistroUtils::expand_template("$here/distro.cfg", $include_path, \%vars, "$dest/dev_container/deploy.cfg");
 
 if ($setenv_file)
 {

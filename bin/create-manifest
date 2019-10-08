@@ -6,15 +6,18 @@ use lib "$FindBin::Bin";
 
 use strict;
 use Config::Simple;
+use File::Temp;
 use Data::Dumper;
 use IPC::Run 'run';
 use GithubRepo;
 use Getopt::Long::Descriptive;
+use DistroUtils;
 
 my($opt, $usage) = describe_options("%c %o", 
-	["help|h" => "show this help message"],
-	["no-recurse" => "do not perform recursive dependency lookup"],
-);
+				    ['include-path|I=s@', "Look here for configuration file templates", { default => [] }],
+				    ["no-recurse" => "do not perform recursive dependency lookup"],
+				    ["help|h" => "show this help message"],
+				   );
 print($usage->text), exit(0) if $opt->help;
 die($usage->text) if @ARGV != 0;
 
@@ -25,21 +28,16 @@ die($usage->text) if @ARGV != 0;
 # and deploy-master lines.
 #
 
-my %cfg;
 my %repo;
 
 my $config_file = "distro.cfg";
 -f $config_file or die "Config file $config_file not found\n";
 
-Config::Simple->import_from($config_file, \%cfg);
+my $cfg = DistroUtils::expand_and_import($config_file, $opt->include_path, {});
 
-my $m_client = $cfg{'default.deploy-client'};
-my $m_service = $cfg{'default.deploy-service'};
-my $m_master = $cfg{'default.deploy-master'};
-
-$m_client = [$m_client] unless ref($m_client);
-$m_service = [$m_service] unless ref($m_service);
-$m_master = [$m_master] unless ref($m_master);
+my $m_client = $cfg->{'default.deploy-client'};
+my $m_service = $cfg->{'default.deploy-service'};
+my $m_master = $cfg->{'default.deploy-master'};
 
 my %mods = map { $_ => 1 } grep { $_ } @$m_client, @$m_service, @$m_master;
 my @mods = sort keys %mods;
@@ -59,9 +57,9 @@ while (@mods_to_checkout)
     my $mod = shift(@mods_to_checkout);
 
     my $repo_str = "kbase/$mod";
-    if ($cfg{"$mod.source-repo"})
+    if ($cfg->{"$mod.source-repo"})
     {
-	$repo_str = $cfg{"$mod.source-repo"};
+	$repo_str = $cfg->{"$mod.source-repo"};
     }
     
     my $repo = GithubRepo->new($repo_str, $token);
@@ -69,7 +67,7 @@ while (@mods_to_checkout)
     print STDERR "Process $mod\n";
 
     my $info = $repo->get_info();
-    my $hash = $cfg{"$mod.source-commit-hash"};
+    my $hash = $cfg->{"$mod.source-commit-hash"};
     
     if (!$hash)
     {
