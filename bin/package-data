@@ -1,0 +1,59 @@
+#!/usr/bin/env perl
+
+use strict;
+use Data::Dumper;
+use File::Temp 'tempdir';
+use Getopt::Long::Descriptive;
+
+my($opt, $usage) = describe_options("%c %o dest-file",
+				    ["help|h" => "show this help message"]);
+
+print($usage->text), exit 0 if $opt->help;
+die ($usage->text) unless @ARGV == 1;
+
+my $dest_squash = shift;
+
+#
+# Package the data for a data release.
+#
+# We perform a copy of the desired data into a temporary space so that
+# we can properly effect renames and removal of unnecessary data.
+#
+
+
+my @packages = ([kmers_v2 => '/vol/core-seed/kmers/core.2018-0531/Data.2', 'core.2015-0531'],
+		[mlst => '/disks/patric-common/data/mlstdb-2015-1123', '2015-1123'],
+		[NR => '/disks/patric-common/data/NR', '2014-0824', { exclude => ['*.nr'] }],
+		[specialty_proteins => '/disks/patric-common/data/specialty_genes/2017-0925', '2017-0925'],
+		);
+
+my $tmp_root = "/dev/shm";
+my $tmpdir = tempdir(DIR => $tmp_root);
+#my $tmpdir = "$tmp_root/mytest";
+mkdir($tmpdir);
+
+open(MAN, ">", "$tmp_root/mytest/MANIFEST");
+for my $pkg (@packages)
+{
+    my($key, $path, $version, $opts) = @$pkg;
+
+    print MAN "$key\t$path\t$version\n";
+
+    my @cmd = ('rsync', '-ar');
+    for my $exclude (@{$opts->{exclude}})
+    {
+	push(@cmd, "--exclude", $exclude);
+    }
+    push(@cmd, "$path/.");
+
+    my $dest = "$tmpdir/$key";
+
+    push(@cmd, "$tmpdir/$key");
+    print "@cmd\n";
+    my $rc = system(@cmd);
+    $rc == 0 or die "Copy for $key failed: $rc. @cmd\n";
+}
+close(MAN);
+my @cmd = ("mksquashfs", "-noappend", $tmpdir, $dest_squash);
+my $rc = system(@cmd);
+$rc == 0 or die "creation failed with rc=$rc: @cmd\n";

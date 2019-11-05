@@ -30,11 +30,11 @@ sub new
     return bless $self, $class;
 }
 
-sub get_master_hash
+sub get_branch_hash
 {
-    my($self) = @_;
+    my($self, $branch) = @_;
 
-    my $url = $self->url_base . "/repos/" . $self->repo . "/commits/master";
+    my $url = $self->url_base . "/repos/" . $self->repo . "/commits/$branch";
     my $data = $self->retrieve($url);
 
     if (!exists($data->{sha}))

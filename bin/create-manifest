@@ -68,10 +68,11 @@ while (@mods_to_checkout)
 
     my $info = $repo->get_info();
     my $hash = $cfg->{"$mod.source-commit-hash"};
+    my $branch = $cfg->{"$mod.source-branch"};
     
     if (!$hash)
     {
-	$hash = $repo->get_master_hash();
+	$hash = $repo->get_branch_hash($branch || "master");
     }
     $hash{$mod} = $hash;
     $info{$mod} = $info;
