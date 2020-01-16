@@ -135,12 +135,15 @@ copy($tarfile, $srcdir) or die "error copying $tarfile to $srcdir: $!";
 #
 
 my %skip_build = map { $_ => 1 } qw(MongoDB Sim Dancer2);
+my %skip_yum  = map { $_ => 1 } qw(Template::Toolkit);
 
 my %yum_pkgs;
 open(L, "-|", "yum", "list", "perl-*");
 while (<L>)
 {
     my($name) = /(perl-\S+)\.[^\s.]+(\s|$)/;
+				     
+    next if $skip_yum{$name};
     $yum_pkgs{$name} = 1;
 }
 close(L);
