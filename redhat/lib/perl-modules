@@ -72,3 +72,4 @@ Graph
 List::MoreUtils
 Term::ReadKey
 Template::Toolkit
+Config::Simple
