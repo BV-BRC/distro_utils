@@ -16,9 +16,8 @@ License:        MIT
 URL:            https://patricbrc.org/
 Source0:        %source
 
-BuildRequires:  perl-Template-Toolkit perl-File-Slurp gcc-c++ perl-Config-Simple 
-BuildRequires:  perl-List-MoreUtils
-Requires:       perl
+BuildRequires:  perl-File-Slurp gcc-c++ perl-Config-Simple expat-devel rsync
+Requires:       perl expat
 
 AutoReqProv: no
 

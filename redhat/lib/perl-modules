@@ -27,7 +27,6 @@ File::Path
 File::Slurp
 File::Temp
 File::Which
-GD
 Getopt::Long
 Getopt::Long::Descriptive
 IO::Socket::SSL
@@ -42,7 +41,6 @@ Log::Log4perl
 Math::Round
 Module::Metadata
 Moose
-PDL
 Pod::Usage
 REST::Client
 SOAP::Lite
