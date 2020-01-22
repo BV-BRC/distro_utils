@@ -138,9 +138,15 @@ my %skip_build = map { $_ => 1 } qw(MongoDB Sim Dancer2);
 
 my %skip_yum;
 
-if (rpm_eval('dist') eq '.el8')
+my $dist = rpm_eval('dist'); 
+if ($dist eq '.el8')
 {
     $skip_yum{'Template::Toolkit'} = 1;
+    $skip_yum{'Moose'} = 1;
+    $skip_yum{'JSON::XS'} = 1;
+    $skip_yum{'JSON::Any'} = 1;
+    $skip_yum{'Getopt::Long::Descriptive'} = 1;
+    $skip_yum{'Class::Load'} = 1;
 }
 
 my %yum_pkgs;
@@ -149,6 +155,10 @@ while (<L>)
 {
     my($name) = /(perl-\S+)\.[^\s.]+(\s|$)/;
 				     
+    if ($dist eq '.el8')
+    {
+	   next unless $name eq "perl-XML-LibXML";
+    }
     $yum_pkgs{$name} = 1;
 }
 close(L);
