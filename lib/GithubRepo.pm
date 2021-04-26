@@ -1,5 +1,6 @@
 package GithubRepo;
 
+use Carp::Always;
 use strict;
 use Data::Dumper;
 use LWP::UserAgent;
