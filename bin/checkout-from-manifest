@@ -18,6 +18,7 @@ my($opt, $usage) = describe_options("%c %o dest-dir [deploy-dir]\n",
 				    ['include-path|I=s@', "Look here for configuration file templates", { default => [] }],
 				    ["setenv-file=s", "File to copy into deployment setenv.sh"],
 				    ["runtime=s", "Runtime to bake into the deployment", { default => $ENV{KB_RUNTIME} }],
+				    ['override=s@', 'Override template configuration values', { default => [] }],
 				    ["help|h", "Print this usage message"]);
 
 print($usage->text), exit if $opt->help;
@@ -115,7 +116,17 @@ while (my($mod, $hash) = each %hash)
 my %vars = (
     target => $deploy_dir,
     runtime => $opt->runtime,
-    );
+	   );
+
+for my $override (@{$opt->override})
+{
+    my($var, $val) = split(/=/, $override, 2);
+    if ($val)
+    {
+	$vars{$var} = $val;
+    }
+}
+    
 if (open(F, "<", "$here/localize.cfg"))
 {
     while (<F>)
@@ -144,6 +155,7 @@ sub checkout
     my($mod, $hash, $repo) = @_;
 
     my $rc = system("git", "clone", "$git_base/$repo", $mod);
+    #my $rc = system("git", "clone", "--depth", "1", "$git_base/$repo", $mod);
     $rc == 0 or die "Clone $mod failed with rc=$rc\n";
 
     $rc = system("cd $mod; git checkout $hash");
