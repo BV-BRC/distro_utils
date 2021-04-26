@@ -136,11 +136,29 @@ copy($tarfile, $srcdir) or die "error copying $tarfile to $srcdir: $!";
 
 my %skip_build = map { $_ => 1 } qw(MongoDB Sim Dancer2);
 
+my %skip_yum;
+
+my $dist = rpm_eval('dist'); 
+if ($dist eq '.el8')
+{
+    $skip_yum{'Template::Toolkit'} = 1;
+    $skip_yum{'Moose'} = 1;
+    $skip_yum{'JSON::XS'} = 1;
+    $skip_yum{'JSON::Any'} = 1;
+    $skip_yum{'Getopt::Long::Descriptive'} = 1;
+    $skip_yum{'Class::Load'} = 1;
+}
+
 my %yum_pkgs;
 open(L, "-|", "yum", "list", "perl-*");
 while (<L>)
 {
     my($name) = /(perl-\S+)\.[^\s.]+(\s|$)/;
+				     
+    if ($dist eq '.el8')
+    {
+	   next unless $name eq "perl-XML-LibXML";
+    }
     $yum_pkgs{$name} = 1;
 }
 close(L);
@@ -153,7 +171,7 @@ while (<PKG>)
     chomp;
     next if $skip_build{$_};
     my $pkg_rpm = to_rpm($_);
-    if ($yum_pkgs{$pkg_rpm})
+    if ($yum_pkgs{$pkg_rpm} && !$skip_yum{$_})
     {
 	push(@require_mods, $pkg_rpm);
     }

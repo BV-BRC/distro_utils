@@ -16,9 +16,8 @@ License:        MIT
 URL:            https://patricbrc.org/
 Source0:        %source
 
-BuildRequires:  perl-Template-Toolkit perl-File-Slurp gcc-c++ perl-Config-Simple 
-BuildRequires:  perl-List-MoreUtils
-Requires:       perl
+BuildRequires:  perl-File-Slurp gcc-c++ expat-devel rsync
+Requires:       perl expat
 
 AutoReqProv: no
 
@@ -32,8 +31,20 @@ The PATRIC Command Line Interface.
 
 %build
 
+#
+# P3 release code creates binaries with embedded path
+# settings so force modifications here.
+#
+export PERL5LIB_ADDITIONS=/vagrant/perl/lib/perl5
+export PATH_ADDITIONS=/vagrant/perl/bin
+
 env KB_IGNORE_MISSING_DEPENDENCIES=1 ./bootstrap /usr
 source ./user-env.sh
+#
+# user-env whacks PERL5LIB so eval here to get local environment
+#
+eval `perl -Mlocal::lib=/vagrant/perl`
+
 make
 
 %install
@@ -41,11 +52,11 @@ export QA_RPATHS=$(( 0x0001|0x0010 ))
 
 mkdir -p %{buildroot}/usr/share/%name-%version/local
 
+source ./user-env.sh
+
 eval `perl -Mlocal::lib=%{buildroot}/usr/share/%name-%version/local`
 
 # PERL MODULES
-
-source ./user-env.sh
 
 perl auto-deploy \
      --target %{buildroot}/usr/share/%name-%version \
