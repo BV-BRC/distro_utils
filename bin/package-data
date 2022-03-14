@@ -134,7 +134,7 @@ if ($dest_tgz)
 }
 
 chmod(0755, "$tmpdir");
-my @cmd = ("mksquashfs", $tmpdir, $dest_squash, "-noappend");
+my @cmd = ("mksquashfs", $tmpdir, $dest_squash, "-noappend", "-processors", 12);
 my $rc = system(@cmd);
 
 my $err;
@@ -143,6 +143,7 @@ if ($rc != 0)
     warn "squashfs creation failed with rc=$rc: @cmd\n";
     $err++;
 }
+chmod(0444, $dest_squash);
 
 if ($tar_handle)
 {

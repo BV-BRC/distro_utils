@@ -34,7 +34,6 @@ my $config_file = "distro.cfg";
 -f $config_file or die "Config file $config_file not found\n";
 
 my $cfg = DistroUtils::expand_and_import($config_file, $opt->include_path, {});
-
 my $m_client = $cfg->{'default.deploy-client'};
 my $m_service = $cfg->{'default.deploy-service'};
 my $m_master = $cfg->{'default.deploy-master'};
@@ -52,6 +51,7 @@ my @mods_to_checkout = @mods;
 
 my $token =  $ENV{GITHUB_TOKEN};
 
+print Dumper($cfg);
 while (@mods_to_checkout)
 {
     my $mod = shift(@mods_to_checkout);
