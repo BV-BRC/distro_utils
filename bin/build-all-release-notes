@@ -1,0 +1,34 @@
+#!/usr/bin/env perl
+
+use strict;
+use Data::Dumper;
+
+#
+# Run through the available Manifest notes in order of build and generate release notes for each.
+#
+
+my @manifests = <build-*/Manifest>;
+my @builds = @manifests;
+s,/Manifest,, foreach @builds;
+
+@builds = sort { build_of($a)  <=> build_of($b) } @builds;
+
+for my $b (reverse(1..$#builds))
+{
+    my $b1 = $builds[$b-1];
+    my $b2 = $builds[$b];
+
+    my $rc = system("gen-release-notes", $b1, $b2);
+    die "build from $b1 to $b2 failed with $rc\n" unless $rc == 0;
+}
+    
+
+sub build_of
+{
+    my($b) = @_;
+    if ($b =~ /build-(\d+)/)
+    {
+	return $1;
+    }
+    return undef;
+}

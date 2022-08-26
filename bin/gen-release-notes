@@ -1,0 +1,146 @@
+#!/usr/bin/env perl
+
+#
+# Generate release notes based on two manifest files.
+#
+
+use strict;
+use Data::Dumper;
+use GithubRepo;
+
+my $token = $ENV{GITHUB_TOKEN};
+
+@ARGV == 2 or die "Usage: $0 build1 build2\n";
+
+my $build1 = shift;
+my $build2 = shift;
+
+my $m1_file = "$build1/Manifest";
+my $m2_file = "$build2/Manifest";
+
+my $m1 = read_manifest($m1_file);
+my $m2 = read_manifest($m2_file);
+
+my(%common, %only_1, %only_2);
+
+print "## Changes from $build1 to $build2\n";
+
+while (my($n, $v1) = each %$m1)
+{
+    my $v2 = $m2->{$n};
+    if ($v2)
+    {
+	$common{$n} = [$v1, $v2];
+    }
+    else
+    {
+	$only_1{$n} = $v1;
+    }
+}
+while (my($n, $v2) = each %$m2)
+{
+    if (!$m1->{$n})
+    {
+	$only_2{$n} = $v2;
+    }
+}
+# print Dumper(\%common, \%only_1, \%only_2);
+
+if (%only_1)
+{
+    print "### Modules removed\n";
+    print "- $_\n" foreach sort keys %only_1;
+}
+
+if (%only_2)
+{
+    print "### Modules added\n";
+    for my $k (sort keys %only_2)
+    {
+	my $v = $only_2{$k};
+	my $repo = GithubRepo->new($v->{repo}, $token);
+	my $com = $repo->get_commit($v->{hash});
+	my $who = $com->{author}->{name};
+	my $when = $com->{author}->{date};
+	my($date) = $when =~ /^(\d{4}-\d\d-\d\d)/;
+	
+	my $l = tree_link($v);
+	print "- $v->{repo} at $l ($who $date)\n";
+    }
+    print "\n";
+}
+
+for my $module_name (sort keys %common)
+{
+    my($v1, $v2) = @{$common{$module_name}};
+    if ($v1->{hash} eq $v2->{hash})
+    {
+	# print STDERR "No change for $module_name\n";
+	next;
+    }
+
+    if ($v1->{repo} ne $v2->{repo})
+    {
+	print "### Module changed source repository from $v1->{repo} at " . commit_link($v1) . " to $v2->{repo} at " . commit_link($v2) . ".\n";
+	next;
+    }
+
+    my $repo_str = $v1->{repo};
+    print "### Commits in [$repo_str](https://github.com/$repo_str)\n";
+
+    my $h1 = short_sha($v1->{hash});
+    my $h2 = short_sha($v2->{hash});
+
+    my $repo = GithubRepo->new($v1->{repo}, $token);
+    my $diff = $repo->compare_commits($h1, $h2);
+    for my $c (@{$diff->{commits}})
+    {
+	my $msg = $c->{commit}->{message};
+	my $sha = short_sha($c->{sha});
+	my $who = $c->{commit}->{author}->{name};
+	my $when = $c->{commit}->{author}->{date};
+	my($date) = $when =~ /^(\d{4}-\d\d-\d\d)/;
+	$msg =~ s,(pull request #(\d+)),[\1](https://github.com/$repo_str/pull/\2),g;
+	$msg =~ s/^$/\\/mg;
+	print "- $msg ($who $date [$sha]($c->{html_url}))\n\n";
+	# print "$sha\t$who\t$when\n\t$msg\n";
+    }
+    print "\n";
+}
+
+
+sub read_manifest
+{
+    my($file) = @_;
+    open(F, "<", $file) or die "cannot read $file: $!";
+    my $res;
+    while (<F>)
+    {
+	chomp;
+	my($name, $hash, $repo) = split(/\t/);
+	$res->{$name} = {name => $name, hash => $hash, repo => $repo };
+    }
+    return $res;
+}
+
+
+sub short_sha
+{
+    return substr($_[0], 0, 7);
+}
+    
+sub commit_link
+{
+    my($obj) = @_;
+    my $repo = GithubRepo->new($obj->{repo}, $token);
+    my $com = $repo->get_commit($obj->{hash});
+    my $short = short_sha($obj->{hash});
+    return "[$short]($com->{html_url})";
+}
+
+sub tree_link
+{
+    my($obj) = @_;
+    my $short = short_sha($obj->{hash});
+    return "[$short](https://github.com/$obj->{repo}/tree/$obj->{hash})";
+}

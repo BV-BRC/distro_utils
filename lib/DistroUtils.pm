@@ -4,6 +4,7 @@ use strict;
 use File::Temp;
 use Config::Simple;
 use Template;
+use Data::Dumper;
 
 sub expand_template
 {

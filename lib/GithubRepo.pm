@@ -1,5 +1,6 @@
 package GithubRepo;
 
+use Carp::Always;
 use strict;
 use Data::Dumper;
 use LWP::UserAgent;
@@ -26,6 +27,7 @@ sub new
     {
 	$self->{ua}->default_header( Authorization => "token " . $token);
     }
+    $self->{ua}->default_header(Accept => "application/vnd.github.v3+json");
 
     return bless $self, $class;
 }
@@ -43,6 +45,54 @@ sub get_branch_hash
     }
 
     return $data->{sha};
+}
+
+sub compare_commits
+{
+    my($self, $c1, $c2) = @_;
+    
+    my $url = $self->url_base . "/repos/" . $self->repo . "/compare/$c1...$c2";
+    my $data;
+    eval {
+	$data = $self->retrieve($url);
+    };
+    return $data;
+}
+
+sub get_commit
+{
+    my($self, $hash) = @_;
+    
+    my $url = $self->url_base . "/repos/" . $self->repo . "/git/commits/$hash";
+    my $data;
+    eval {
+	$data = $self->retrieve($url);
+    };
+    return $data;
+}
+
+sub get_tree
+{
+    my($self, $hash) = @_;
+    
+    my $url = $self->url_base . "/repos/" . $self->repo . "/git/trees/$hash";
+    my $data;
+    eval {
+	$data = $self->retrieve($url);
+    };
+    return $data;
+}
+
+sub get_pull
+{
+    my($self, $pull) = @_;
+    
+    my $url = $self->url_base . "/repos/" . $self->repo . "/pulls/$pull";
+    my $data;
+    eval {
+	$data = $self->retrieve($url);
+    };
+    return $data;
 }
 
 sub get_dependencies

@@ -1,17 +1,27 @@
 #!/usr/bin/env perl
 
 use strict;
+use IPC::Run;
+use POSIX;
+use List::Util qw(max);
 use Data::Dumper;
 use File::Temp 'tempdir';
+use File::Find;
+use File::Path qw(make_path);
 use Getopt::Long::Descriptive;
+use Proc::ParallelLoop;
 
-my($opt, $usage) = describe_options("%c %o dest-file",
+my($opt, $usage) = describe_options("%c %o dest-squash [dest-tgz]",
+				    ["package-dir=s" => "Don't use an ephemeral data dir, use this instead"],
+				    ["version|v=s" => "include this version number"],
+				    ["parallel|p=i" => "default parallelism for file copy (default 3)", { default => 3 }],
 				    ["help|h" => "show this help message"]);
 
 print($usage->text), exit 0 if $opt->help;
-die ($usage->text) unless @ARGV == 1;
+die ($usage->text) unless @ARGV == 1 or @ARGV == 2;
 
 my $dest_squash = shift;
+my $dest_tgz = shift;
 
 #
 # Package the data for a data release.
@@ -20,26 +30,78 @@ my $dest_squash = shift;
 # we can properly effect renames and removal of unnecessary data.
 #
 
+my $p3_data_dir = "/home/parrello/SEEDtk/Data/P3Data";
 
-my @packages = ([kmers_v2 => '/vol/core-seed/kmers/core.2018-0531/Data.2', 'core.2015-0531'],
-		[mlst => '/disks/patric-common/data/mlstdb-2015-1123', '2015-1123'],
-		[NR => '/disks/patric-common/data/NR', '2014-0824', { exclude => ['*.nr'] }],
-		[specialty_proteins => '/disks/patric-common/data/specialty_genes/2017-0925', '2017-0925'],
+my @packages = (
+		[workflows => '/vol/patric3/genome_annotation/workflows', '%latest'],
+	      	[subsystems => '/vol/patric3/fams/2018-0531/subsystem-import', '2018-0531',
+	      { exclude => ['projected-subsystems-tbl', 'projected-subsytems-json', 'Subsystems', 't*'] }],
+	      	#[kmers_v2 => '/vol/core-seed/kmers/core.2018-0531/Data.2', 'core.2018-0531'],
+	      	[kmer_metadata_v2 => '/vol/core-seed/kmers/core.2018-0531/Data.2', 'core.2018-0531', { exclude => ['kmer.table.mem_map'] }],
+	      	[mlst => '/disks/patric-common/data/mlstdb-2015-1123', '2015-1123'],
+	      	[NR => '/disks/patric-common/data/NR', '2014-0824', { exclude => [] }], # need the .nr for lengths
+	      	[specialty_proteins => '/disks/patric-common/data/specialty_genes/2017-0925', '2017-0925'],
+	      	[phage_annotation => '/disks/patric-common/data/phage-annotation/v01', 'v01'],
+	      	[metagenome_dbs => '/vol/patric3/metagenome_dbs', '2020-0914',
+#	      	[metagenome_dbs => '/vol/patric3/metagenome_dbs', '2019-1023',
+	      	     { exclude => [qw(tests *.log *.old library kraken2.* data taxonomy)] }],
+	      	[kma_db => '/vol/patric3/kma_db', '2019-0320'],
+	        [minhash => '/disks/patric-common/data/minhash', '2021-1029',
+		 	     { exclude => [qw(combined.* sketches sketches-new)], include => []}],
+		[seedtk_data => $p3_data_dir, '%latest'],
 		);
 
-my $tmp_root = "/dev/shm";
-my $tmpdir = tempdir(DIR => $tmp_root);
+for my $p (@packages)
+{
+    my($tag, $path, $stamp) = @$p;
+
+    if ($stamp eq '%latest')
+    {
+	#
+	# Compute a timestamp based on the latest datestamp
+	# of an included file
+	#
+
+	my $latest;
+	
+	my $findsub = sub {
+	    return unless -f $File::Find::name;
+	    my @s = stat(_);
+	    $latest = max($latest, $s[9]);
+	    # print "$File::Find::name " . strftime("%Y-%m-%d", localtime $s[9]) . "\n";
+	};
+
+	find({ wanted => $findsub, follow => 1, follow_skip => 2 }, $path);
+	my $stamp = strftime("%Y-%m-%d", localtime $latest);
+	$p->[2] = $stamp;
+    }
+}
+
+my $tmp_root = "/disks/scratch/olson";
+#my $tmp_root = "/dev/shm";
+#my $tmpdir = tempdir(DIR => $tmp_root, CLEANUP => 1);
+# my $tmpdir = tempdir(CLEANUP => 1);
 #my $tmpdir = "$tmp_root/mytest";
+
+my $tmpdir = $opt->package_dir // tempdir(CLEANUP => 1);
 mkdir($tmpdir);
 
-open(MAN, ">", "$tmp_root/mytest/MANIFEST");
-for my $pkg (@packages)
+if ($opt->version)
 {
+    open(VER, ">", "$tmpdir/DATA-VERSION") or die "Cannot write $tmpdir/DATA-VERSION: $!";
+    print VER  $opt->version . "\n";
+    close(VER);
+}
+
+pareach \@packages, sub {
+    my($pkg) = @_;
     my($key, $path, $version, $opts) = @$pkg;
 
-    print MAN "$key\t$path\t$version\n";
-
-    my @cmd = ('rsync', '-ar');
+    my @cmd = ('rsync', '-ar', "--copy-links");
+    for my $include (@{$opts->{include}})
+    {
+	push(@cmd, "--include", $include);
+    }
     for my $exclude (@{$opts->{exclude}})
     {
 	push(@cmd, "--exclude", $exclude);
@@ -52,8 +114,43 @@ for my $pkg (@packages)
     print "@cmd\n";
     my $rc = system(@cmd);
     $rc == 0 or die "Copy for $key failed: $rc. @cmd\n";
+}, { Max_Workers => $opt->parallel };
+
+open(MAN, ">", "$tmpdir/DATA-MANIFEST") or die "Cannot write $tmpdir/DATA-MANIFEST: $!";
+for my $pkg (@packages)
+{
+    my($key, $path, $version, $opts) = @$pkg;
+    print MAN "$key\t$path\t$version\n";
 }
 close(MAN);
-my @cmd = ("mksquashfs", "-noappend", $tmpdir, $dest_squash);
+
+
+my $tar_handle;
+if ($dest_tgz)
+{
+    my @tar = ("tar", '-C', $tmpdir, "-z", "-c", "-f", $dest_tgz, ".");
+    $tar_handle = IPC::Run::start(\@tar);
+    $tar_handle or die "error starting @tar\n";
+}
+
+chmod(0755, "$tmpdir");
+my @cmd = ("mksquashfs", $tmpdir, $dest_squash, "-noappend", "-processors", 12);
 my $rc = system(@cmd);
-$rc == 0 or die "creation failed with rc=$rc: @cmd\n";
+
+my $err;
+if ($rc != 0)
+{
+    warn "squashfs creation failed with rc=$rc: @cmd\n";
+    $err++;
+}
+chmod(0444, $dest_squash);
+
+if ($tar_handle)
+{
+    $tar_handle->finish;
+}
+
+if ($err)
+{
+    exit 1;
+}
