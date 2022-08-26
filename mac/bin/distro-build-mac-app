@@ -29,7 +29,7 @@ my $default_app_name = "KBase";
 
 my($opt, $usage) = describe_options("%c %o build-dir\n",
 				    ["ignore-missing-dependencies", "Ignore missing dependencies on build"],
-				    ["skip-pythyon", "don't include python runtime"],
+				    ["skip-python", "don't include python runtime"],
 				    ["app-name=s", "application name", { default => $default_app_name }],
 				    ["version=s", "version string for this release"],
 				    ["icon=s", "icon to use for the dmg", { default => $default_icon }],
