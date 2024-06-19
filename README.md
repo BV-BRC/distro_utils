@@ -1,7 +1,7 @@
 distro_utils
 ============
 
-This module contains utility code and data used in the creation of KBase distributions.
+This module contains utility code and data used in the creation of BV-BRC distributions.
 
 Overall plan:
 
