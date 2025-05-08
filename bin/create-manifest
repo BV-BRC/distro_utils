@@ -12,6 +12,7 @@ use IPC::Run 'run';
 use GithubRepo;
 use Getopt::Long::Descriptive;
 use DistroUtils;
+use Spreadsheet::Write;
 
 my($opt, $usage) = describe_options("%c %o", 
 				    ['include-path|I=s@', "Look here for configuration file templates", { default => [] }],
@@ -41,6 +42,10 @@ my $m_master = $cfg->{'default.deploy-master'};
 my %mods = map { $_ => 1 } grep { $_ } @$m_client, @$m_service, @$m_master;
 my @mods = sort keys %mods;
 
+my %contribs;
+my %commit;
+my %branch;
+
 push(@mods, "dev_container");
 
 my %repos;
@@ -51,7 +56,7 @@ my @mods_to_checkout = @mods;
 
 my $token =  $ENV{GITHUB_TOKEN};
 
-print Dumper($cfg);
+#print Dumper($cfg);
 while (@mods_to_checkout)
 {
     my $mod = shift(@mods_to_checkout);
@@ -64,16 +69,24 @@ while (@mods_to_checkout)
     
     my $repo = GithubRepo->new($repo_str, $token);
     $repos{$mod} = $repo;
+    $contribs{$mod} = join(" ",
+			   map { "$_->{login}:$_->{contributions}" }
+			   @{$repo->get_contributors()});
     print STDERR "Process $mod\n";
 
     my $info = $repo->get_info();
     my $hash = $cfg->{"$mod.source-commit-hash"};
-    my $branch = $cfg->{"$mod.source-branch"};
-    
+    my $branch_name = $cfg->{"$mod.source-branch"} // $info->{default_branch};
+    my $branch = $repo->get_branch($branch_name);
+
     if (!$hash)
     {
-	$hash = $repo->get_branch_hash($branch || "master");
+	$hash = $repo->get_branch_commit($branch_name)->{sha};
+	# print "Retrieve branch hash '$branch_name' => $hash\n";
     }
+    my $commit = $repo->get_commit($hash);
+    $commit{$mod} = $commit;
+    $branch{$mod} = $branch;
     $hash{$mod} = $hash;
     $info{$mod} = $info;
 
@@ -93,14 +106,50 @@ while (@mods_to_checkout)
 	    }
 	}
     }
+
 }
 
+my $sp = Spreadsheet::Write->new(file => "manifest.xlsx",
+				 sheet => "Modules",
+				 styles => {
+				     header => { font_weight => 'bold' }
+				 }
+				);
+
+$sp->addrow({
+    content => [qw(Module Branch Repo Hash), 'Last Author', 'Last Commit', 'Contributors'],
+    style => 'header',
+});
 open(M, ">", "Manifest") or die "Cannot write Manifest: $!";
 for my $mod (@mods)
 {
-    print M "$mod\t$hash{$mod}\t$repos{$mod}->{repo}\n";
+    my $branch = $branch{$mod};
+    my $commit = $commit{$mod};
+# die Dumper($commit);
+#    die Dumper($branch{$mod});
+    print M join("\t",
+		 $mod,
+		 $hash{$mod},
+		 $repos{$mod}->{repo},
+		 $branch->{name},
+		 $branch->{_links}->{html},
+		 $commit->{author}->{name},
+		 $commit->{author}->{date},
+		 $contribs{$mod},
+		), "\n";
+
+
+    $sp->addrow($mod,
+		$branch->{name},
+		"=HYPERLINK(\"$branch->{_links}->{html}\", \"$repos{$mod}->{repo}\")",
+		"=HYPERLINK(\"$commit->{html_url}\", \"$hash{$mod}\")",
+		$commit->{author}->{name},
+		$commit->{author}->{date},
+		$contribs{$mod},
+		);
 }
 close(M);
+$sp->close();
 
 open(M, ">", "Contents") or die "Cannot write Contents: $!";
 for my $mod (@mods)

@@ -241,6 +241,7 @@ for my $f (readdir(D))
 }
 
 my $build_cmd = "cd $build_dir; dpkg-deb --build $debian_app_name-$version";
+print "Build deb: $build_cmd\n";
 my $rc = system($build_cmd);
 $rc == 0 or die "Error $rc building package ($build_cmd)\n";
 

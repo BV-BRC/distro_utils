@@ -10,7 +10,7 @@ use File::Find;
 # We look for packages that this deployment provides and do not include those.
 #
 
-my %blacklist = map { $_ => 1 } qw (libutf8-perl libsoap-lite-perl);
+my %blacklist = map { $_ => 1 } qw (libutf8-perl libsoap-lite-perl libdata-dumper-perl libterm-readline-perl);
 my %remap = ('libjson-rpc-legacy-client-perl' => 'libjson-rpc-perl');
 
 @ARGV == 1 or die "Usage: $0 deployment-dir\n";

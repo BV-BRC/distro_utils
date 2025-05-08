@@ -32,19 +32,24 @@ sub new
     return bless $self, $class;
 }
 
-sub get_branch_hash
+sub get_branch
+{
+    my($self, $branch) = @_;
+
+    my $url = $self->url_base . "/repos/" . $self->repo . "/branches/$branch";
+    my $data = $self->retrieve($url);
+
+    return $data;
+}
+
+sub get_branch_commit
 {
     my($self, $branch) = @_;
 
     my $url = $self->url_base . "/repos/" . $self->repo . "/commits/$branch";
     my $data = $self->retrieve($url);
 
-    if (!exists($data->{sha}))
-    {
-	die "get_master_hash: no sha found in data\n" . Dumper($data);
-    }
-
-    return $data->{sha};
+    return $data;
 }
 
 sub compare_commits
@@ -117,6 +122,17 @@ sub get_info
     my($self) = @_;
 
     my $url = $self->url_base . "/repos/" . $self->repo;
+    my $data = $self->retrieve($url);
+
+    return $data;
+    
+}
+
+sub get_contributors
+{
+    my($self) = @_;
+
+    my $url = $self->url_base . "/repos/" . $self->repo . "/contributors";
     my $data = $self->retrieve($url);
 
     return $data;
