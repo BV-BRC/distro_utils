@@ -158,7 +158,7 @@ sub checkout
     #my $rc = system("git", "clone", "--depth", "1", "$git_base/$repo", $mod);
     $rc == 0 or die "Clone $mod failed with rc=$rc\n";
 
-    $rc = system("cd $mod; git checkout $hash");
+    $rc = system("cd $mod; git -c advice.detachedHead=false checkout $hash");
     $rc == 0 or die "Checkout $hash of $mod failed with rc=$rc\n";
 }
 
